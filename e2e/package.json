@@ -1,0 +1,25 @@
+{
+  "name": "@handoff/e2e",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Handoff integration tests: Playwright UI flows + viem script-level contract e2e (SPEC §13).",
+  "scripts": {
+    "test": "npm run test:contract && npm run test:ui",
+    "test:contract": "tsx scripts/contract-e2e.ts",
+    "test:ui": "playwright test",
+    "test:ui:headed": "playwright test --headed",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@handoff/contracts-abi": "file:../packages/contracts-abi",
+    "@handoff/datastreams": "file:../packages/datastreams",
+    "viem": "^2.21.0"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.48.0",
+    "@types/node": "^22.0.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0"
+  }
+}
