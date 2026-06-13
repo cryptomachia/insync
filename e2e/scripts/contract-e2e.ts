@@ -127,7 +127,10 @@ async function makeDeal(opts: { freeCancelOffsetSec: number; expiryOffsetSec: nu
   const listRcpt = await publicClient.waitForTransactionReceipt({ hash: listHash });
   const listingId = eventArg(listRcpt.logs, 'Listed', 'listingId');
 
-  const now = Math.floor(Date.now() / 1000);
+  // Base offsets on the CHAIN's current block timestamp, not wall-clock: this script
+  // repeatedly calls evm_increaseTime, so anvil's clock drifts ahead of Date.now().
+  const latest = await publicClient.getBlock({ blockTag: 'latest' });
+  const now = Number(latest.timestamp);
   const freeCancelUntil = BigInt(now + opts.freeCancelOffsetSec);
   const expiry = BigInt(now + opts.expiryOffsetSec);
 
@@ -254,8 +257,8 @@ async function scBuyerCancelSellerNoShow() {
 
 async function scReclaimNoShow() {
   section('§4: reclaimExpired after expiry, seller NOT checked in -> full refund to buyer (CRE path)');
-  const { dealId } = await makeDeal({ freeCancelOffsetSec: 1, expiryOffsetSec: 2 });
-  await increaseTime(10); // pass expiry
+  const { dealId } = await makeDeal({ freeCancelOffsetSec: 1, expiryOffsetSec: 60 });
+  await increaseTime(120); // pass expiry
   const bBefore = await bal(buyer.account.address);
   // anyone/CRE may call; use seller here to mimic the keeper.
   await send(seller, { address: escrow, functionName: 'reclaimExpired', args: [dealId, await getReport()] });
@@ -266,9 +269,9 @@ async function scReclaimNoShow() {
 
 async function scReclaimGhostedSeller() {
   section('§4: reclaimExpired after expiry, seller CHECKED IN -> deposit to seller (buyer ghosted)');
-  const { dealId } = await makeDeal({ freeCancelOffsetSec: 1, expiryOffsetSec: 2 });
+  const { dealId } = await makeDeal({ freeCancelOffsetSec: 1, expiryOffsetSec: 60 });
   await send(seller, { address: escrow, functionName: 'checkIn', args: [dealId] });
-  await increaseTime(10);
+  await increaseTime(120);
   const sBefore = await bal(seller.account.address);
   const bBefore = await bal(buyer.account.address);
   await send(seller, { address: escrow, functionName: 'reclaimExpired', args: [dealId, await getReport()] });

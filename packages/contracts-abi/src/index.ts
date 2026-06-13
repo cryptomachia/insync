@@ -41,24 +41,25 @@ export enum DealState {
 
 export type Address = `0x${string}`;
 
-function pick(...keys: string[]): Address | undefined {
-  const env = (globalThis as any)?.process?.env ?? {};
-  for (const k of keys) {
-    const v = env[k];
-    if (v && /^0x[0-9a-fA-F]{40}$/.test(v)) return v as Address;
-  }
-  return undefined;
+const ADDR_RE = /^0x[0-9a-fA-F]{40}$/;
+function valid(v: string | undefined): Address | undefined {
+  return v && ADDR_RE.test(v) ? (v as Address) : undefined;
 }
 
+// NEXT_PUBLIC_* are referenced LITERALLY so Next inlines them into the browser
+// bundle (a dynamic `env[key]` lookup is not statically replaced and reads
+// undefined client-side). The non-prefixed fallbacks are read in Node
+// (backend/cre/e2e) where the full process.env is available.
 export function getAddresses() {
+  const env = (typeof process !== 'undefined' ? process.env : {}) as Record<string, string | undefined>;
   return {
-    escrow: pick('NEXT_PUBLIC_ESCROW_ADDRESS', 'ESCROW_ADDRESS'),
-    reputation: pick('NEXT_PUBLIC_REPUTATION_ADDRESS', 'REPUTATION_ADDRESS'),
-    usdc: pick('NEXT_PUBLIC_USDC_ADDRESS', 'USDC_ADDRESS'),
-    verifierProxy: pick('VERIFIER_PROXY_ADDRESS'),
+    escrow: valid(process.env.NEXT_PUBLIC_ESCROW_ADDRESS) ?? valid(env.ESCROW_ADDRESS),
+    reputation: valid(process.env.NEXT_PUBLIC_REPUTATION_ADDRESS) ?? valid(env.REPUTATION_ADDRESS),
+    usdc: valid(process.env.NEXT_PUBLIC_USDC_ADDRESS) ?? valid(env.USDC_ADDRESS),
+    verifierProxy: valid(process.env.NEXT_PUBLIC_VERIFIER_PROXY_ADDRESS) ?? valid(env.VERIFIER_PROXY_ADDRESS),
   };
 }
 
 export const IS_MOCK =
-  String((globalThis as any)?.process?.env?.MOCK ?? '').toLowerCase() === 'true' ||
-  String((globalThis as any)?.process?.env?.NEXT_PUBLIC_MOCK ?? '').toLowerCase() === 'true';
+  process.env.NEXT_PUBLIC_MOCK === 'true' ||
+  (typeof process !== 'undefined' && process.env.MOCK === 'true');

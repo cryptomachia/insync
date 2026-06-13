@@ -1,6 +1,6 @@
 'use client';
 
-import { use, useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useAuth, useWalletClient } from '@handoff/auth';
 import { FundButton } from '@handoff/funding';
@@ -27,9 +27,9 @@ const VOLATILE_BUFFER_BPS = 2000; // +20%
 export default function BuyListingPage({
   params,
 }: {
-  params: Promise<{ listingId: string }>;
+  params: { listingId: string };
 }) {
-  const { listingId } = use(params);
+  const { listingId } = params;
   const id = useMemo(() => {
     try {
       return BigInt(listingId);

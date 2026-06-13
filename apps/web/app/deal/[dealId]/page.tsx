@@ -1,6 +1,6 @@
 'use client';
 
-import { use, useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useAuth, useWalletClient } from '@handoff/auth';
 import { ReleaseQR, ScanToRelease } from '@handoff/qr';
 import { DealState } from '@handoff/contracts-abi';
@@ -37,9 +37,9 @@ type Role = 'buyer' | 'seller' | 'observer';
 export default function DealPage({
   params,
 }: {
-  params: Promise<{ dealId: string }>;
+  params: { dealId: string };
 }) {
-  const { dealId } = use(params);
+  const { dealId } = params;
   const id = useMemo(() => {
     try {
       return BigInt(dealId);
@@ -88,12 +88,13 @@ export default function DealPage({
     return <div className="py-10 text-center text-slate-500">Loading deal…</div>;
   }
 
-  const role: Role =
-    address && address.toLowerCase() === deal.buyer.toLowerCase()
-      ? 'buyer'
-      : address && address.toLowerCase() === deal.seller.toLowerCase()
-      ? 'seller'
-      : 'observer';
+  const me = address?.toLowerCase();
+  const isBuyer = !!me && me === deal.buyer.toLowerCase();
+  const isSeller = !!me && me === deal.seller.toLowerCase();
+  const role: Role = isBuyer ? 'buyer' : isSeller ? 'seller' : 'observer';
+  // In mock/demo the same wallet can be both parties (self-deal); show both action sets.
+  const roleLabel =
+    isBuyer && isSeller ? 'buyer & seller (you)' : role === 'observer' ? 'viewer' : role;
 
   const stable = isStableToken(deal.payToken);
   const deposit = depositUsd1e8(deal.priceUsd1e8, deal.depositBps);
@@ -120,7 +121,7 @@ export default function DealPage({
       </div>
 
       <div className="card space-y-1 text-sm">
-        <KV k="Your role" v={role === 'observer' ? 'viewer' : role} />
+        <KV k="Your role" v={roleLabel} />
         <KV k="Buyer" v={shortAddr(deal.buyer)} mono />
         <KV k="Seller" v={shortAddr(deal.seller)} mono />
         <KV k="Item price" v={fmtUsd1e8(deal.priceUsd1e8)} />
@@ -141,39 +142,44 @@ export default function DealPage({
 
       {isTerminal(deal.state) ? (
         <TerminalCard deal={deal} />
-      ) : role === 'seller' ? (
-        <SellerActions
-          deal={deal}
-          busy={busy}
-          onCheckIn={() =>
-            run('checkIn', () => checkIn(walletClient!, deal.dealId), 'Checked in. Show the QR to the buyer.')
-          }
-          onAgreeCancel={() =>
-            run('agreeCancel', () => agreeCancel(walletClient!, deal.dealId), 'Cancel agreed — buyer fully refunded.')
-          }
-          disabled={!walletClient}
-        />
-      ) : role === 'buyer' ? (
-        <BuyerActions
-          deal={deal}
-          busy={busy}
-          stable={stable}
-          onConfirm={() =>
-            run(
-              'confirm',
-              () => confirmReceipt(walletClient!, deal.dealId, deal.payToken),
-              'Released! Seller paid, deposit returned to you.',
-            )
-          }
-          onBuyerCancel={() =>
-            run(
-              'buyerCancel',
-              () => buyerCancel(walletClient!, deal.dealId, deal.payToken),
-              'Cancelled.',
-            )
-          }
-          disabled={!walletClient}
-        />
+      ) : isSeller || isBuyer ? (
+        <>
+          {isSeller && (
+            <SellerActions
+              deal={deal}
+              busy={busy}
+              onCheckIn={() =>
+                run('checkIn', () => checkIn(walletClient!, deal.dealId), 'Checked in. Show the QR to the buyer.')
+              }
+              onAgreeCancel={() =>
+                run('agreeCancel', () => agreeCancel(walletClient!, deal.dealId), 'Cancel agreed — buyer fully refunded.')
+              }
+              disabled={!walletClient}
+            />
+          )}
+          {isBuyer && (
+            <BuyerActions
+              deal={deal}
+              busy={busy}
+              stable={stable}
+              onConfirm={() =>
+                run(
+                  'confirm',
+                  () => confirmReceipt(walletClient!, deal.dealId, deal.payToken),
+                  'Released! Seller paid, deposit returned to you.',
+                )
+              }
+              onBuyerCancel={() =>
+                run(
+                  'buyerCancel',
+                  () => buyerCancel(walletClient!, deal.dealId, deal.payToken),
+                  'Cancelled.',
+                )
+              }
+              disabled={!walletClient}
+            />
+          )}
+        </>
       ) : (
         <InfoNote>
           You are viewing this deal. Connect as the buyer or seller to act.

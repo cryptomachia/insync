@@ -1,67 +1,64 @@
-// e2e/tests/happy-path.spec.ts — the SPEC §16 demo happy path, in the browser,
-// with NEXT_PUBLIC_MOCK=true against local anvil:
+// e2e/tests/happy-path.spec.ts — SPEC §16 demo happy path in the browser, with
+// NEXT_PUBLIC_MOCK=true against local anvil. In mock mode the wallet is anvil
+// account 0, which is both seller and buyer (self-deal); the deal page shows both
+// action sets, so a single session can drive the whole flow.
 //
-//   login (email, mock auto-connect) -> Sell: list a bike $80 / 10% deposit
-//   -> Buy: one-tap fund $88 -> seller "funds committed" -> meet:
-//   seller checkIn + show QR -> buyer scan/paste handoff code -> confirmReceipt
-//   -> Deal shows Completed (seller paid $80, buyer refunded $8 deposit).
+//   /sell: list $80 / 10% deposit -> /buy/N: one-tap fund $88 -> "safe to meet"
+//   -> /deal/N: seller checkIn -> reveal QR code -> buyer paste code -> Release
+//   -> Confirm receipt -> Completed.
 //
-// Selectors are resilient (role/text based) — see _helpers.ts. This requires the
-// full stack up: `make anvil-bg && make deploy` then Playwright boots apps/web.
+// Requires the stack up: anvil + deploy (scripts/deploy.sh) then Playwright boots apps/web.
 
-import { test } from '@playwright/test';
-import { ensureLoggedIn, clickAny, fillAny, readHandoffCode, expect, HOME } from './_helpers';
+import { test, expect } from '@playwright/test';
 
-test.describe('happy path (login -> list -> fund -> checkIn -> release -> Completed)', () => {
+test.describe('happy path (list -> fund -> checkIn -> release -> Completed)', () => {
   test('completes an in-person handoff end to end', async ({ page }) => {
-    // 1. login (mock auto-connects as anvil acct 0)
-    await ensureLoggedIn(page);
+    test.setTimeout(120_000);
 
-    // 2. Sell: create a listing — bike, $80, 10% deposit, USDC
-    await clickAny(page, /sell|create listing|list( an)? item/i);
-    await fillAny(page, /price|amount|usd|\$/i, '80');
-    // deposit policy: try a deposit/percent field; ignore if the UI presets it.
-    await fillAny(page, /deposit|earnest|%|bps/i, '10').catch(() => {});
-    await clickAny(page, /create|list|publish|submit/i);
+    // 1. Sell: create a listing (mock auto-connects as anvil acct 0).
+    await page.goto('/sell');
+    await page.locator('#price').fill('80');
+    await page.getByRole('button', { name: '10%' }).click();
+    await page.getByRole('button', { name: /create listing/i }).click();
 
-    // The app should land on (or link to) the new listing / Buy view.
-    await clickAny(page, /buy|view listing|open|go to deal/i).catch(() => {});
+    // 2. Grab the /buy/N link the success note renders.
+    const buyLink = page.getByRole('link', { name: /\/buy\/\d+/ });
+    await expect(buyLink).toBeVisible({ timeout: 30_000 });
+    const href = await buyLink.getAttribute('href');
+    expect(href).toMatch(/\/buy\/\d+/);
 
-    // 3. Buy: see the deposit policy and one-tap fund $88
-    await expect(page.getByText(/\$?\s*80/).first()).toBeVisible();
-    await clickAny(page, /fund|one[- ]?tap|lock funds|deposit/i);
+    // 3. Buy: see the $80 price + deposit policy, then one-tap fund.
+    await page.goto(href!);
+    await expect(page.getByText(/\$80/).first()).toBeVisible({ timeout: 20_000 });
+    await page.getByRole('button', { name: /fund/i }).click();
 
-    // 4. seller sees "funds committed"
-    await expect(
-      page.getByText(/funds committed|committed|locked|funded/i).first(),
-    ).toBeVisible({ timeout: 30_000 });
-
-    // 5. the meet: seller checks in, then shows the release QR
-    await clickAny(page, /check ?in|i'?m here|arrived/i);
-    await expect(page.getByText(/checked in|qr|show this|release/i).first()).toBeVisible({
-      timeout: 30_000,
+    // 4. Seller-verifiable "funds committed / safe to meet".
+    await expect(page.getByText(/safe to meet|funds committed/i).first()).toBeVisible({
+      timeout: 45_000,
     });
 
-    // 6. buyer scans / pastes the handoff code -> confirmReceipt
-    const code = await readHandoffCode(page);
-    if (code) {
-      await fillAny(page, /paste|handoff|code|scan/i, code);
-    }
-    await clickAny(page, /release|confirm receipt|i got it|received|scan/i);
+    // 5. Go to the deal.
+    await page.getByRole('link', { name: /go to the deal/i }).click();
+    await expect(page.getByRole('heading', { name: /deal #\d+/i })).toBeVisible({ timeout: 20_000 });
 
-    // 7. Completed
-    await expect(page.getByText(/completed|done|settled|success/i).first()).toBeVisible({
-      timeout: 30_000,
-    });
+    // 6. Seller checks in, then reveals the one-time handoff code.
+    await page.getByRole('button', { name: /check in/i }).click();
+    await page.getByText(/show code as text/i).click({ timeout: 30_000 });
+    const code = (await page.locator('code').first().innerText()).trim();
+    expect(code.length).toBeGreaterThan(0);
 
-    // and the §4 success split is surfaced: seller paid $80, buyer refunded $8
-    await expect(page.getByText(/\$?\s*80/).first()).toBeVisible();
+    // 7. Buyer pastes the code -> Release -> Confirm receipt.
+    await page.getByPlaceholder('paste handoff code').fill(code);
+    await page.getByRole('button', { name: /^release$/i }).click();
+    await page.getByRole('button', { name: /confirm receipt/i }).click();
+
+    // 8. Completed (seller paid $80, deposit returned).
+    await expect(page.getByText(/completed/i).first()).toBeVisible({ timeout: 45_000 });
   });
 
   test('app loads in mock mode without a Dynamic/Blink account', async ({ page }) => {
-    await page.goto(HOME);
-    // Mock mode must render the app shell offline (no third-party keys).
-    await expect(page).toHaveTitle(/handoff/i).catch(() => {});
+    await page.goto('/');
     await expect(page.locator('body')).toBeVisible();
+    await expect(page.getByRole('link', { name: /sell an item/i })).toBeVisible();
   });
 });

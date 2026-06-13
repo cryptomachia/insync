@@ -23,7 +23,10 @@ import {
 
 export type { AuthState } from './types';
 
-const MOCK = (globalThis as any)?.process?.env?.NEXT_PUBLIC_MOCK === 'true';
+// Reference process.env.NEXT_PUBLIC_MOCK LITERALLY so Next inlines it into the
+// browser bundle (a `globalThis.process.env` indirection is not statically replaced,
+// so it reads undefined client-side and the live Dynamic provider would mount).
+const MOCK = process.env.NEXT_PUBLIC_MOCK === 'true';
 
 export function HandoffAuthProvider({ children }: { children: React.ReactNode }) {
   if (MOCK) {

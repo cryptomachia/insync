@@ -27,6 +27,13 @@ contract Deploy is Script {
             MockERC20 mockUsdc = new MockERC20("Mock USD Coin", "USDC", 6);
             usdc = address(mockUsdc);
             console2.log("Deployed MockERC20 (USDC, 6 decimals):", usdc);
+            // Seed the deployer + the first standard anvil accounts so the mock/demo
+            // wallet (and the e2e) can fund deals out of the box.
+            uint256 seed = 1_000_000 * 1e6; // 1,000,000 USDC
+            mockUsdc.mint(msg.sender, seed);
+            mockUsdc.mint(0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266, seed); // anvil #0
+            mockUsdc.mint(0x70997970C51812dc3A010C7d01b50e0d17dc79C8, seed); // anvil #1
+            mockUsdc.mint(0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC, seed); // anvil #2
         } else {
             console2.log("Using existing USDC:", usdc);
         }

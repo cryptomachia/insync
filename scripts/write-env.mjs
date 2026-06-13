@@ -96,7 +96,9 @@ function upsertEnv(file, updates) {
 
 // ---- write the four targets ------------------------------------------------
 const targets = [
-  { file: join(ROOT, '.env'), updates: { ...plainBase, ...addrs } },
+  // Root .env carries BOTH plain and NEXT_PUBLIC_ mirrors: tools that load it for
+  // the web dev server (e.g. Playwright) must not pass empty NEXT_PUBLIC_* over .env.local.
+  { file: join(ROOT, '.env'), updates: { ...plainBase, ...addrs, ...nextMirror(addrs) } },
   { file: join(ROOT, 'apps', 'web', '.env.local'), updates: nextMirror(addrs) },
   { file: join(ROOT, 'backend', '.env'), updates: { ...plainBase, ...addrs, PORT: process.env.PORT || '8787' } },
   { file: join(ROOT, 'cre', '.env'), updates: { ...plainBase, ...addrs, PRIVATE_KEY: process.env.PRIVATE_KEY || '', BACKEND_URL: process.env.BACKEND_URL || 'http://127.0.0.1:8787' } },
