@@ -38,19 +38,20 @@ const erc20Abi = parseAbi([
   'function decimals() view returns (uint8)',
 ]);
 
-function env(key: string): string | undefined {
-  const e = (globalThis as any)?.process?.env ?? {};
-  const v = e[key];
-  return v == null || v === '' ? undefined : String(v);
-}
+const norm = (v: string | undefined) => (v == null || v === '' ? undefined : v);
 
+// Reference NEXT_PUBLIC_* literally so Next inlines them into the browser bundle (a
+// `globalThis.process.env[...]` indirection reads undefined client-side and silently
+// falls back to localhost — breaks live testnet reads/funding).
 const RPC =
-  env('NEXT_PUBLIC_RPC_URL') ?? env('RPC_URL') ?? 'http://127.0.0.1:8545';
+  norm(process.env.NEXT_PUBLIC_RPC_URL) ?? norm(process.env.RPC_URL) ?? 'http://127.0.0.1:8545';
 
-const BLINK_MERCHANT_ID = env('NEXT_PUBLIC_BLINK_MERCHANT_ID');
+const BLINK_MERCHANT_ID = norm(process.env.NEXT_PUBLIC_BLINK_MERCHANT_ID);
 // Server signer route that holds the merchant private key (SPEC: docs.blink.cash/integration/signer-endpoint).
-const BLINK_SIGNER_PATH = env('NEXT_PUBLIC_BLINK_SIGNER_PATH') ?? '/api/sign-payment';
-const CHAIN_ID = Number(env('NEXT_PUBLIC_CHAIN_ID') ?? env('CHAIN_ID') ?? '31337');
+const BLINK_SIGNER_PATH = norm(process.env.NEXT_PUBLIC_BLINK_SIGNER_PATH) ?? '/api/sign-payment';
+const CHAIN_ID = Number(
+  norm(process.env.NEXT_PUBLIC_CHAIN_ID) ?? norm(process.env.CHAIN_ID) ?? '31337',
+);
 
 // Live Blink only when not mocking AND a merchantId is configured. Otherwise we run the
 // pure on-chain approve+fund path (works with no Blink account).

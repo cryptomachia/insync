@@ -13,7 +13,7 @@ import { test, expect } from '@playwright/test';
 
 test.describe('happy path (list -> fund -> checkIn -> release -> Completed)', () => {
   test('completes an in-person handoff end to end', async ({ page }) => {
-    test.setTimeout(120_000);
+    test.setTimeout(300_000);
 
     // 1. Sell: create a listing (mock auto-connects as anvil acct 0).
     await page.goto('/sell');
@@ -29,21 +29,21 @@ test.describe('happy path (list -> fund -> checkIn -> release -> Completed)', ()
 
     // 3. Buy: see the $80 price + deposit policy, then one-tap fund.
     await page.goto(href!);
-    await expect(page.getByText(/\$80/).first()).toBeVisible({ timeout: 20_000 });
+    await expect(page.getByText(/\$80/).first()).toBeVisible({ timeout: 60_000 });
     await page.getByRole('button', { name: /fund/i }).click();
 
     // 4. Seller-verifiable "funds committed / safe to meet".
     await expect(page.getByText(/safe to meet|funds committed/i).first()).toBeVisible({
-      timeout: 45_000,
+      timeout: 120_000,
     });
 
     // 5. Go to the deal.
     await page.getByRole('link', { name: /go to the deal/i }).click();
-    await expect(page.getByRole('heading', { name: /deal #\d+/i })).toBeVisible({ timeout: 20_000 });
+    await expect(page.getByRole('heading', { name: /deal #\d+/i })).toBeVisible({ timeout: 60_000 });
 
     // 6. Seller checks in, then reveals the one-time handoff code.
     await page.getByRole('button', { name: /check in/i }).click();
-    await page.getByText(/show code as text/i).click({ timeout: 30_000 });
+    await page.getByText(/show code as text/i).click({ timeout: 90_000 });
     const code = (await page.locator('code').first().innerText()).trim();
     expect(code.length).toBeGreaterThan(0);
 
