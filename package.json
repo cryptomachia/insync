@@ -5,10 +5,7 @@
   "description": "Trustless in-person escrow for buying from strangers.",
   "workspaces": [
     "packages/*",
-    "apps/*",
-    "backend",
-    "cre",
-    "e2e"
+    "apps/*"
   ],
   "scripts": {
     "build": "npm run build --workspaces --if-present",
