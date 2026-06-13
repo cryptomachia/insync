@@ -1,0 +1,5 @@
+# Foundry build deps & artifacts (do not commit; reinstall with `forge install`).
+lib/
+out/
+cache/
+broadcast/
