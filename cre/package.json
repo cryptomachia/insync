@@ -1,0 +1,29 @@
+{
+  "name": "@handoff/cre",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Handoff Chainlink CRE workflow — the escrow orchestration brain (auto-reclaim of expired deals + lifecycle notifications).",
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.workflow.json",
+    "keeper:local": "tsx --preserve-symlinks src/keeper.local.ts",
+    "keeper:dry-run": "tsx --preserve-symlinks src/keeper.dry-run.ts",
+    "simulate": "bash scripts/simulate.sh",
+    "deals": "tsx --preserve-symlinks src/scan-deals.ts"
+  },
+  "dependencies": {
+    "@chainlink/cre-sdk": "^1.11.0",
+    "@handoff/contracts-abi": "file:../packages/contracts-abi",
+    "@handoff/datastreams": "file:../packages/datastreams",
+    "viem": "^2.21.0",
+    "zod": "^3.23.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.19.43",
+    "tsx": "^4.19.0",
+    "typescript": "^5.5.0"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

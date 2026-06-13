@@ -1,0 +1,13 @@
+{
+  "schedule": "0 */1 * * * *",
+  "backendUrl": "http://127.0.0.1:8787",
+  "stableToken": "0x0000000000000000000000000000000000000000",
+  "maxDealId": 200,
+  "evms": [
+    {
+      "escrowAddress": "0x0000000000000000000000000000000000000000",
+      "chainSelectorName": "base-sepolia",
+      "gasLimit": "1000000"
+    }
+  ]
+}
