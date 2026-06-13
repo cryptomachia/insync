@@ -1,0 +1,24 @@
+{
+  // The CRE workflow program (src/workflow.ts only). Compiled in isolation so
+  // @chainlink/cre-sdk's ambient WASM-sandbox restrictions (fs/fetch/setTimeout
+  // → never) apply ONLY here — exactly where they should, since this file is
+  // compiled to WASM and runs in the CRE Javy/QuickJS runtime. The CRE CLI
+  // (`cre workflow compile`) uses the nearest tsconfig; this mirrors that.
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "preserveSymlinks": true,
+    "lib": ["ES2022"],
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "resolveJsonModule": true,
+    "allowImportingTsExtensions": true,
+    "verbatimModuleSyntax": false,
+    "noEmit": true
+  },
+  "include": ["src/workflow.ts", "src/deals.ts"]
+}

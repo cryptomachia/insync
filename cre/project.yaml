@@ -1,0 +1,36 @@
+# Chainlink CRE project config (template).
+#
+# Generated shape modeled on `cre init` output for cre-sdk v1.11.x. Run
+# `cre init` yourself to produce the canonical file for your CLI version, then
+# copy the `workflows` + `target` blocks below into it. The CLI reads this to
+# know which TypeScript entrypoint to compile, which config.json to bind, and
+# which target environment (local simulation vs a CRE DON) to run against.
+
+# Logical project name (shows up in the CRE dashboard for live deploys).
+project-name: handoff
+
+# Workflow definitions. `handoff-reclaim` is the expired-deal reclaim sweep.
+workflows:
+  - name: handoff-reclaim
+    # Entry TypeScript file (compiled to WASM by `cre workflow compile`).
+    workflow-path: ./src/workflow.ts
+    # Runtime config bound at simulate/deploy time (see config.json).
+    config-path: ./config.json
+    # Off-chain secrets (keeper/Data Streams keys); see secrets.json.template.
+    secrets-path: ./secrets.json
+
+# Targets the CLI can run a workflow against.
+targets:
+  # Local WASM simulation on your machine — no CRE account, but DOES make real
+  # RPC/HTTP calls to whatever RPC the chainSelectorName resolves to (point it
+  # at anvil for a fully local run). Used by scripts/simulate.sh.
+  local-simulation:
+    type: local-simulation
+
+  # A live CRE DON (Early Access). Requires CRE account access + funded keys.
+  # Deploying here is what produces the prize-eligible on-chain state change
+  # signed by the DON. Filled in from env (see .env.example CRE_* vars).
+  cre-testnet:
+    type: don
+    # don-id / workflow-owner / rpc endpoints are injected by the CLI from your
+    # authenticated `cre login` session and the CRE_* env vars below.
