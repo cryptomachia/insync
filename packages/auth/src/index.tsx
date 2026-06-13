@@ -1,33 +1,66 @@
-// STUB (foundation). AGENT 5 replaces with the real Dynamic embedded-wallet integration.
-// Keep these exact exports (SPEC §7). Mock mode signs with anvil account 0.
+// @handoff/auth — Dynamic embedded wallets (email login), with a local mock mode.
+// SPEC §7. Exports are a FROZEN contract (AGENT 8 depends on them):
+//   HandoffAuthProvider({ children })
+//   useAuth()        -> { ready, isConnected, address?, email?, login, logout }
+//   useWalletClient() -> viem WalletClient | undefined
+//   AuthButton()
+//
+// Mode selection:
+//   NEXT_PUBLIC_MOCK=true             -> deterministic local anvil wallet, no Dynamic account.
+//   else (NEXT_PUBLIC_DYNAMIC_ENV_ID) -> live Dynamic embedded wallet.
+//
+// MOCK is read once at module load; it never changes during a session, so the
+// branch below is stable and does not violate the rules of hooks.
 import React from 'react';
-import { createWalletClient, http, type WalletClient } from 'viem';
-import { privateKeyToAccount } from 'viem/accounts';
+import type { WalletClient } from 'viem';
+import type { AuthState } from './types';
+import { MockAuthProvider, useMockAuth, useMockWalletClient } from './mock';
+import {
+  DynamicAuthProvider,
+  useDynamicAuth,
+  useDynamicWalletClient,
+} from './dynamic';
 
-const ANVIL_PK = '0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80' as const;
-const RPC = (globalThis as any)?.process?.env?.NEXT_PUBLIC_RPC_URL ?? 'http://127.0.0.1:8545';
-const account = privateKeyToAccount(ANVIL_PK);
-const mockWallet = createWalletClient({ account, transport: http(RPC) });
+export type { AuthState } from './types';
+
+const MOCK = (globalThis as any)?.process?.env?.NEXT_PUBLIC_MOCK === 'true';
 
 export function HandoffAuthProvider({ children }: { children: React.ReactNode }) {
-  return <>{children}</>;
+  if (MOCK) {
+    return <MockAuthProvider>{children}</MockAuthProvider>;
+  }
+  return <DynamicAuthProvider>{children}</DynamicAuthProvider>;
 }
 
-export function useAuth() {
-  return {
-    ready: true,
-    isConnected: true,
-    address: account.address as `0x${string}`,
-    email: 'demo@handoff.local',
-    login: () => {},
-    logout: () => {},
-  };
+export function useAuth(): AuthState {
+  // MOCK is a module constant: exactly one branch runs for the app's lifetime,
+  // so this conditional hook call is stable across renders.
+  if (MOCK) {
+    return useMockAuth();
+  }
+  return useDynamicAuth();
 }
 
 export function useWalletClient(): WalletClient | undefined {
-  return mockWallet;
+  if (MOCK) {
+    return useMockWalletClient();
+  }
+  return useDynamicWalletClient();
 }
 
 export function AuthButton() {
-  return <button>demo@handoff.local</button>;
+  const { ready, isConnected, address, email, login, logout } = useAuth();
+
+  if (!ready) {
+    return <button disabled>Loading…</button>;
+  }
+
+  if (!isConnected) {
+    return <button onClick={login}>Sign in with email</button>;
+  }
+
+  const label =
+    email ?? (address ? `${address.slice(0, 6)}…${address.slice(-4)}` : 'Connected');
+
+  return <button onClick={logout}>{label}</button>;
 }
