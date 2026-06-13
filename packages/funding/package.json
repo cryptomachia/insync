@@ -5,7 +5,24 @@
   "type": "module",
   "main": "./src/index.tsx",
   "types": "./src/index.tsx",
-  "exports": { ".": "./src/index.tsx" },
-  "peerDependencies": { "react": "^18", "viem": "^2.0.0" },
-  "dependencies": { "@handoff/contracts-abi": "*" }
+  "exports": {
+    ".": "./src/index.tsx"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "peerDependencies": {
+    "react": "^18",
+    "viem": "^2.0.0"
+  },
+  "dependencies": {
+    "@handoff/contracts-abi": "*"
+  },
+  "devDependencies": {
+    "@types/node": "^20",
+    "@types/react": "^18",
+    "react": "^18",
+    "typescript": "^5",
+    "viem": "^2.0.0"
+  }
 }
