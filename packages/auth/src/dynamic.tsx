@@ -10,8 +10,10 @@ import { EthereumWalletConnectors, isEthereumWallet } from '@dynamic-labs/ethere
 import type { WalletClient } from 'viem';
 import type { AuthState } from './types';
 
-const ENV_ID =
-  (globalThis as any)?.process?.env?.NEXT_PUBLIC_DYNAMIC_ENV_ID ?? '';
+// Reference process.env.NEXT_PUBLIC_DYNAMIC_ENV_ID LITERALLY so Next inlines it into
+// the browser bundle. A `globalThis.process.env[...]` indirection is NOT statically
+// replaced, so it reads undefined client-side and Dynamic mounts with no environmentId.
+const ENV_ID = process.env.NEXT_PUBLIC_DYNAMIC_ENV_ID ?? '';
 
 export function DynamicAuthProvider({ children }: { children: React.ReactNode }) {
   return (

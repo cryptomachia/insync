@@ -105,6 +105,38 @@ test('POST /notify stores a notification row and validates input', async () => {
   assert.equal(noEvent.statusCode, 400);
   const noDeal = await app.inject({ method: 'POST', url: '/notify', payload: { event: 'X' } });
   assert.equal(noDeal.statusCode, 400);
+
+  // Oversized event label is rejected.
+  const longEvent = await app.inject({
+    method: 'POST',
+    url: '/notify',
+    payload: { dealId: 1, event: 'E'.repeat(100) },
+  });
+  assert.equal(longEvent.statusCode, 400);
+
+  // Control characters in the event label (log-injection guard) are rejected.
+  const ctrlEvent = await app.inject({
+    method: 'POST',
+    url: '/notify',
+    payload: { dealId: 1, event: 'ok\nFAKE LOG LINE' },
+  });
+  assert.equal(ctrlEvent.statusCode, 400);
+
+  // Oversized payload is rejected.
+  const bigPayload = await app.inject({
+    method: 'POST',
+    url: '/notify',
+    payload: { dealId: 1, event: 'X', payload: { blob: 'z'.repeat(5000) } },
+  });
+  assert.equal(bigPayload.statusCode, 400);
+
+  // Non-numeric dealId is rejected.
+  const badDeal = await app.inject({
+    method: 'POST',
+    url: '/notify',
+    payload: { dealId: '1; DROP TABLE deals', event: 'X' },
+  });
+  assert.equal(badDeal.statusCode, 400);
 });
 
 test('state transition reflected via setDealState', async () => {

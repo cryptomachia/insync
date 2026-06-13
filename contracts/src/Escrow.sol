@@ -216,6 +216,12 @@ contract Escrow is ReentrancyGuard, Ownable {
     ///         price + deposit. For a stable token the required amount is exact; for a volatile
     ///         token the buyer is expected to include a buffer (priced at fund time off-chain) so
     ///         the on-chain settlement can still cover price+deposit despite price moves.
+    /// @dev    The escrow records the *actual* amount received (balance delta), not the requested
+    ///         `tokenAmount`. This makes the deal safe with fee-on-transfer / rebasing tokens: the
+    ///         held balance always equals the recorded `tokenAmount`, so settlement payouts can
+    ///         never exceed the balance and strand funds. For well-behaved tokens (USDC) the two
+    ///         are identical. The stable price+deposit requirement is checked against the received
+    ///         amount.
     /// @param freeCancelUntil buyer may cancel for a full refund before this timestamp.
     /// @param expiry          after this timestamp anyone/CRE may {reclaimExpired}.
     function fund(uint256 listingId, uint256 tokenAmount, uint64 freeCancelUntil, uint64 expiry)
@@ -231,12 +237,25 @@ contract Escrow is ReentrancyGuard, Ownable {
         // freeCancelUntil must not be after expiry (a free-cancel window past expiry is meaningless).
         if (freeCancelUntil > expiry) revert InvalidFreeCancel();
 
-        // For the stable path we can require the exact price+deposit up front (no buffer needed).
-        // For the volatile path we only sanity-check the funded amount is non-zero here; the USD
-        // worth is recomputed against the verifier at settlement.
-        if (l.payToken == stableToken) {
+        address payToken = l.payToken;
+
+        // Pull the buyer's funds and measure the *actual* amount received. This is the only
+        // value the escrow ever distributes, so fee-on-transfer / rebasing tokens can never
+        // leave a deal over-credited (which would make later payouts revert and strand funds).
+        // The pull happens before we persist the deal; `nonReentrant` blocks re-entry, and the
+        // deal is only created from the verified received amount (effects-after-verified-pull).
+        uint256 balBefore = IERC20(payToken).balanceOf(address(this));
+        IERC20(payToken).safeTransferFrom(msg.sender, address(this), tokenAmount);
+        uint256 received = IERC20(payToken).balanceOf(address(this)) - balBefore;
+        if (received == 0) revert ZeroToken();
+
+        // For the stable path we can require the exact price+deposit (no buffer needed). The check
+        // is against the *received* amount so a fee-on-transfer stable can't under-collateralise.
+        // For the volatile path the USD worth is recomputed against the verifier at settlement, so
+        // the buyer is expected to include a buffer (priced off-chain at fund time).
+        if (payToken == stableToken) {
             uint256 required = _stablePriceUnits(l.priceUsd1e8) + _stableDepositUnits(l.priceUsd1e8, l.depositBps);
-            if (tokenAmount < required) revert InsufficientFunding(required, tokenAmount);
+            if (received < required) revert InsufficientFunding(required, received);
         }
 
         dealId = nextDealId++;
@@ -244,19 +263,16 @@ contract Escrow is ReentrancyGuard, Ownable {
             state: State.Funded,
             buyer: msg.sender,
             seller: l.seller,
-            payToken: l.payToken,
+            payToken: payToken,
             priceUsd1e8: l.priceUsd1e8,
-            tokenAmount: tokenAmount,
+            tokenAmount: received,
             depositBps: l.depositBps,
             freeCancelUntil: freeCancelUntil,
             expiry: expiry,
             sellerCheckedIn: false
         });
 
-        // Effects done; interaction last (CEI). nonReentrant for defense in depth.
-        IERC20(l.payToken).safeTransferFrom(msg.sender, address(this), tokenAmount);
-
-        emit Funded(dealId, listingId, msg.sender, l.seller, tokenAmount, freeCancelUntil, expiry);
+        emit Funded(dealId, listingId, msg.sender, l.seller, received, freeCancelUntil, expiry);
     }
 
     function getDeal(uint256 dealId)

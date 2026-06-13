@@ -1,26 +1,52 @@
+# ---- Dependencies ----
 node_modules/
+
+# ---- Lockfiles (this is a multi-package demo repo; we don't commit locks) ----
 package-lock.json
 pnpm-lock.yaml
 yarn.lock
+
+# ---- JS / TS build output ----
 dist/
 build/
 out/
-cache/
 .next/
 coverage/
-*.log
+*.tsbuildinfo
+
+# ---- Foundry ----
+# `lib/` holds forge-installed deps (forge-std, OpenZeppelin) — reinstall with `forge install`.
+lib/
+cache/
+**/cache/
+# Foundry writes the deployer PRIVATE KEY into broadcast/<script>/<chain>/run-latest.json.
+# NEVER commit broadcast output.
+broadcast/
+**/broadcast/
+artifacts/
+typechain-types/
+.foundry/
+
+# ---- Secrets & local config (NEVER commit) ----
 .env
 .env.local
 .env.*.local
-.DS_Store
-broadcast/
-artifacts/
-typechain-types/
+secrets.json
+*.pem
+*.key
+
+# ---- Local databases ----
 *.db
 *.sqlite
 *.sqlite3
-lib/forge-std/
-lib/openzeppelin-contracts/
-.foundry/
+
+# ---- Test artifacts ----
 playwright-report/
 test-results/
+
+# ---- Dev scratch dir (anvil pid, deploy snapshot, service logs) ----
+.handoff/
+
+# ---- Logs / OS ----
+*.log
+.DS_Store

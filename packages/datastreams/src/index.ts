@@ -24,15 +24,24 @@ import {
   type DataStreamsConfig,
 } from './client.js';
 
+// Server-side env for the LIVE path only. These are non-NEXT_PUBLIC secrets
+// (CHAINLINK_DATASTREAMS_API_KEY/SECRET, DATASTREAMS_API_HOST) that must never be
+// inlined into a client bundle — they stay undefined client-side, which is correct
+// because the LIVE path is never reached in the browser (MOCK short-circuits it).
 const env: Record<string, string | undefined> =
-  (globalThis as any)?.process?.env ?? {};
+  typeof process !== 'undefined' && process.env ? process.env : {};
 
-function flag(name: string): boolean {
-  return String(env[name] ?? '').toLowerCase() === 'true';
-}
-
-/** True when running in mock mode (no live Data Streams account needed). */
-export const MOCK: boolean = flag('MOCK') || flag('NEXT_PUBLIC_MOCK');
+/**
+ * True when running in mock mode (no live Data Streams account needed).
+ *
+ * This package is transpiled into apps/web (buy page + lib/tx.ts import it), so the
+ * NEXT_PUBLIC_MOCK / MOCK reads MUST be LITERAL `process.env.X` member expressions:
+ * Next only inlines those into the browser bundle. A dynamic `env[name]` lookup is not
+ * statically replaced, so it reads undefined client-side and the live REST path would
+ * be attempted in the browser.
+ */
+export const MOCK: boolean =
+  process.env.NEXT_PUBLIC_MOCK === 'true' || process.env.MOCK === 'true';
 
 // Mock constants — must match contracts/MockVerifier (SPEC §6).
 const MOCK_REPORT: `0x${string}` = '0x';

@@ -76,7 +76,9 @@ wait_for_http "http://127.0.0.1:${BACKEND_PORT}/health" 40 || true
 run_svc web "${WEB_DIR}" npm run dev
 
 # 5. cre local keeper (reclaim loop against local anvil). MOCK/local mode.
-run_svc cre "${CRE_DIR}" npm run dev
+#    Runs the keeper in --watch mode: it sweeps for past-expiry deals on an
+#    interval (CRE_INTERVAL_MS) and submits reclaimExpired() on-chain.
+run_svc cre "${CRE_DIR}" npm run keeper:local -- --watch
 
 echo
 ok "Handoff is up:"

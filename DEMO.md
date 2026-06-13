@@ -75,8 +75,10 @@ CRE workflow reclaims the funds automatically — no one has to babysit it."
 If you want to force it instantly instead of waiting:
 
 ```bash
-# from the cre/ dir, the keeper exposes a one-shot run in local mode:
-cd cre && npm run reclaim   # or: npm run dev -- --once
+# from the cre/ dir, the keeper does a single one-shot sweep by default:
+cd cre && npm run keeper:local        # one-shot reclaim sweep
+# (npm run keeper:local -- --watch   keeps sweeping on an interval — this is
+#  what `make dev` runs; npm run keeper:local -- --dry-run previews, no tx)
 ```
 
 **Prize beat:** Chainlink **CRE** (the anchor) — orchestration + auto-refund,
@@ -113,7 +115,7 @@ sub-second price for the volatile-token settlement.
   Confirm `make dev` printed all three URLs and there are no `[web]` errors.
 - **`funds committed` not showing for the seller?** Refresh the Deal screen; the
   backend indexer (`[backend]` logs) picks up the `Funded` event within a block.
-- **CRE didn't fire?** Run the one-shot reclaim (`cd cre && npm run reclaim`).
+- **CRE didn't fire?** Run the one-shot reclaim (`cd cre && npm run keeper:local`).
 - **Fall back to the chain truth:** `make e2e-contract` proves all 7 §4 outcomes
   + the volatile release deterministically in ~5 seconds — run it live if a UI
   step misbehaves.

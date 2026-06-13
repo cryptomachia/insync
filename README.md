@@ -1,33 +1,136 @@
 # Handoff
 
-Trustless in-person escrow for buying from strangers. The seller sees the buyer's funds are
-**real and locked before anyone travels** (kills flaking); at the meet the buyer scans the
-seller's QR and funds settle **instantly and finally — no bank, no chargeback**. Two strangers
-with no shared financial institution can transact safely. That's impossible without crypto.
+**Trustless in-person escrow for buying from a stranger on Marketplace/Craigslist —
+funds release only at the physical handoff.**
 
-- **In-person, dispute-free** escrow with a **commitment-deposit** (earnest-money) cancellation model.
-- **Dynamic** embedded wallets (email login) · **Blink** one-tap USDC funding.
-- **Chainlink CRE** orchestrates auto-refunds; **Chainlink Data Streams** price-locks volatile-token payments.
+The seller can *see the buyer's money is real and locked before anyone travels*
+(this kills flaking, the #1 Marketplace pain); at the meet the buyer scans the
+seller's one-time QR and funds settle **instantly and finally — no bank, no
+chargeback**.
 
-See [SPEC.md](./SPEC.md) for the full architecture and module contracts.
-Run instructions and the demo script are appended below / in `DEMO.md` after integration.
+## Why this needs crypto
 
-## Layout
-`contracts/` Solidity escrow + reputation · `packages/*` (auth/funding/qr/datastreams/contracts-abi)
-· `apps/web/` Next.js app · `backend/` indexer+API · `cre/` Chainlink workflow · `e2e/` tests.
+Two strangers with no shared bank, no cash changing hands, want one thing: a
+deal that is **provably funded before they travel** and **final once it's done**.
+That exact combination is impossible with traditional rails:
 
-> Everything runs locally with `MOCK=true` (no third-party accounts). Live sponsor infra
-> activates by dropping real keys into `.env`.
+- **Provable commitment.** The seller verifies on-chain that the buyer's funds
+  are escrowed *before* agreeing to meet. No "I'll bring cash, promise."
+- **Final settlement, no chargebacks.** A card or PayPal payment can be clawed
+  back days later; an on-chain release is irreversible the instant it happens.
+- **No trusted intermediary.** No platform holding the money, no dispute desk,
+  no KYC'd shared account between people who just met.
 
-## Run it
+Handoff is **dispute-free by construction**: every outcome is a deterministic
+on-chain rule or a mutual in-person signature — never a judge, jury, or AI.
 
-Everything runs locally with **no third-party accounts** (`MOCK=true`). You need
-[Foundry](https://book.getfoundry.sh/getting-started/installation)
-(`forge`/`anvil`/`cast`) and Node ≥ 20.
+## Architecture
+
+```
+                         ┌──────────────────────────────┐
+        email login      │        apps/web (Next.js)     │   mobile-first UI:
+   ┌──────────────────►  │   Sell · Buy · Deal · MyDeals │   list / fund / meet
+   │                     └───────┬───────────────┬───────┘
+   │                             │ imports        │ reads/writes via viem
+   │   packages/ (standalone npm workspaces)      │
+   │   ┌──────────┬───────────┬──────────┬────────┴─────────┐
+   │   │  auth    │  funding  │   qr     │   datastreams     │
+   │  Dynamic    Blink     QR handshake  Chainlink Data Streams
+   │  embedded   one-tap   (in-person    (price-lock for
+   │  wallets    USDC fund   release)      volatile tokens)
+   │   └──────────┴───────────┴──────────┴───────────────────┘
+   │                             │ all share @handoff/contracts-abi
+   │                             ▼
+   │                  ┌────────────────────────┐        ┌─────────────────────┐
+   └───── Dynamic ───►│  contracts/ (Solidity) │◄───────│  cre/ (Chainlink CRE)│
+                      │  Escrow · Reputation   │  reclaimExpired()  workflow:  │
+                      │  IVerifierProxy        │  on-chain   orchestration +   │
+                      └───────────┬────────────┘  state      auto-refund keeper│
+                                  │ emits events  change   └──────────┬────────┘
+                                  ▼                                    │ POST /notify
+                      ┌────────────────────────┐                      ▼
+                      │  backend/ (Fastify+sqlite)  indexer + API ◄────┘
+                      │  GET /deals /listings · POST /notify           │
+                      └────────────────────────┘
+```
+
+- **`contracts/`** — `Escrow.sol` (the state machine) + `Reputation.sol`
+  (on-chain outcome tally, written only by the escrow). 68 Foundry tests.
+- **`packages/*`** — independent `@handoff/*` npm workspaces consumed by the web
+  app: `auth` (Dynamic), `funding` (Blink), `qr` (handshake), `datastreams`
+  (Chainlink), `contracts-abi` (the frozen ABI + address helpers).
+- **`apps/web/`** — Next.js 14 mobile-first app. Imports the packages above.
+- **`backend/`** — Fastify + better-sqlite3 event indexer and read API.
+- **`cre/`** — the Chainlink CRE workflow: the escrow's orchestration brain.
+
+See **[SPEC.md](./SPEC.md)** for the full design (frozen interfaces, event
+signatures, and the per-module contract).
+
+## The commitment-deposit (cancellation) model
+
+The buyer's **item price is always safe**. The only money ever at risk is a
+small, seller-set **deposit** (earnest money, `depositBps` per listing), and only
+when the buyer flakes *after the seller has already shown up*. At funding the
+buyer locks `price + deposit`; the outcome is a deterministic rule:
+
+| Trigger | Item price | Deposit |
+|---|---|---|
+| `confirmReceipt` — buyer got the item (success) | → seller | → back to buyer |
+| `agreeCancel` — seller co-signs a cancel | → buyer | → buyer |
+| `buyerCancel` **before** the free-cancel window | → buyer | → buyer |
+| `buyerCancel` after free window **and** seller checked in | → buyer | **→ seller** (buyer flaked on a present seller) |
+| `buyerCancel` after free window, seller **not** checked in | → buyer | → buyer (seller no-show protection) |
+| `reclaimExpired` after expiry, seller checked in | → buyer | → seller |
+| `reclaimExpired` after expiry, seller not checked in | → buyer | → buyer |
+
+For a volatile pay-token, "price" and "deposit" are valued in USD via Chainlink
+Data Streams at the moment of the call, with surplus returned to the buyer.
+
+## Live deployment (Base Sepolia · chainId 84532)
+
+| Contract | Address |
+|---|---|
+| Escrow | [`0xaA2A7D734a1d10BB60e08fE306474687266cb38F`](https://sepolia.basescan.org/address/0xaA2A7D734a1d10BB60e08fE306474687266cb38F) |
+| USDC (test) | [`0xf4E59C1c79A6fF313E64b9B9398A03Da60Ba8Ff8`](https://sepolia.basescan.org/address/0xf4E59C1c79A6fF313E64b9B9398A03Da60Ba8Ff8) |
+| Reputation | [`0x7036FF7A5EcA175c6422402919a0eECc4Df9CD07`](https://sepolia.basescan.org/address/0x7036FF7A5EcA175c6422402919a0eECc4Df9CD07) |
+| MockVerifier | [`0xABe64efA8ffF93C129Dad6Cc3F1E53F50a7EecBC`](https://sepolia.basescan.org/address/0xABe64efA8ffF93C129Dad6Cc3F1E53F50a7EecBC) |
+
+## Sponsors used
+
+- **Chainlink CRE** (anchor) — the `cre/` workflow polls for past-expiry deals
+  and submits `reclaimExpired(dealId, report)` on-chain; that keeper transaction
+  is the concrete Chainlink-driven state change.
+- **Chainlink Data Streams** — pull-based, sub-second price for volatile-token
+  settlement; the signed report is verified on-chain inside the escrow.
+- **Dynamic** — embedded wallets with email login (no seed phrase).
+- **Blink** — one-tap USDC funding (approve + `Escrow.fund` in a single tap).
+
+## Test status
+
+- **68 contract tests** (Foundry): happy path, every §4 cancellation branch,
+  volatile-token release through a mock verifier, reentrancy, access control.
+- **Script-level on-chain e2e** (`e2e/scripts/contract-e2e.ts`, viem): every §4
+  outcome plus the volatile Data Streams release, run directly against the chain.
+- **Full UI e2e** (Playwright): the happy path (login → list → fund → check-in →
+  scan → released) and a cancel branch, booting `apps/web` in mock mode.
 
 ```bash
-make install     # deps for contracts + packages + apps + standalone e2e/backend/cre
-make dev         # anvil + deploy + backend + web + Chainlink CRE local keeper
+make test          # forge tests + e2e
+make e2e-contract  # ~5s: every §4 outcome + the volatile Data Streams release
+make e2e-ui        # Playwright: happy path + a cancel branch
+```
+
+## How to run
+
+You need [Foundry](https://book.getfoundry.sh/getting-started/installation)
+(`forge`/`anvil`/`cast`) and Node ≥ 20.
+
+### Local (mock mode — no third-party accounts)
+
+```bash
+cp .env.example .env     # MOCK=true by default; no real keys needed
+make install             # deps for contracts + packages + apps + backend/cre/e2e
+make dev                 # anvil + deploy + backend + web + Chainlink CRE local keeper
 ```
 
 `make dev` brings up the whole stack and prints the URLs:
@@ -39,17 +142,15 @@ rpc      http://127.0.0.1:8545     # local anvil chain (id 31337)
 ```
 
 In mock mode you're auto-logged-in (Dynamic mock), funding does a real on-chain
-USDC approve+`fund` on anvil (Blink mock), and the QR step has a paste fallback.
-**Ctrl-C** tears the stack down.
+USDC approve + `fund` on anvil (Blink mock), and the QR step has a paste
+fallback for desktop. **Ctrl-C** tears the stack down.
 
-### Test
+### Live (Base Sepolia + real sponsors)
 
-```bash
-make test          # forge tests + e2e (contract-level via viem + Playwright UI)
-make e2e-contract  # ~5s: every §4 cancellation outcome + the volatile Data Streams release
-make e2e-ui        # Playwright: happy path + a cancel branch (boots apps/web in mock mode)
-make typecheck     # tsc --noEmit across TS + e2e
-```
+Drop real keys into `.env` (see `.env.example` for every var), set
+`MOCK=false` / `NEXT_PUBLIC_MOCK=false`, point `*_ADDRESS` at the deployed
+contracts above, and re-run. You can flip sponsors on one at a time. Exact
+steps: [`e2e/CHECKLIST.md`](./e2e/CHECKLIST.md).
 
 ### Common targets
 
@@ -62,20 +163,27 @@ make typecheck     # tsc --noEmit across TS + e2e
 | `make down` / `make clean` | Stop background anvil / remove artifacts + local env files. |
 | `make help` | List every target. |
 
-### Going live
+## The demo
 
-Drop real keys into the root `.env` (Dynamic, Blink, Chainlink Data Streams,
-Base Sepolia RPC + `PRIVATE_KEY`), set `MOCK=false`/`NEXT_PUBLIC_MOCK=false`, and
-re-run `make dev`. You can flip sponsors on one at a time. Full steps:
+The 3-path live demo (happy · no-show CRE reclaim · volatile Data Streams) with
+click-by-click steps is in **[DEMO.md](./DEMO.md)**. The integration order is in
 [`e2e/CHECKLIST.md`](./e2e/CHECKLIST.md).
 
-### The demo
+## Known limitations
 
-The 3-path live demo (happy · no-show CRE reclaim · volatile Data Streams) is in
-[`DEMO.md`](./DEMO.md). The exact integration order is in
-[`e2e/CHECKLIST.md`](./e2e/CHECKLIST.md).
+- **On-chain verifier is a `MockVerifier`.** The live Base Sepolia deployment
+  uses `MockVerifier` for Data Streams report verification, not Chainlink's real
+  on-chain Verifier proxy. The report-fetch + on-chain-verify path is exercised
+  end-to-end; swapping in the production verifier proxy is an address change.
+- **CRE runs as a local keeper.** A full live CRE DON deployment needs a CRE
+  account; the bundled keeper (`cre/`) reproduces the workflow's logic and
+  submits the real `reclaimExpired` transaction locally / on Base Sepolia.
+- **Blink uses the hosted passkey/signer flow.** Live funding depends on Blink's
+  hosted passkey flow and a server-side merchant signer
+  (`apps/web/app/api/sign-payment`); mock mode bypasses it with a direct
+  on-chain approve + `fund`.
+- **Test USDC.** The Base Sepolia USDC above is a test token for the demo, not
+  Circle's canonical testnet USDC.
 
-> **Note:** this devx layer (`scripts/`, `e2e/`, `Makefile`, `DEMO.md`) is built
-> against the final integrated layout (SPEC §2). The other module clones must be
-> assembled into one tree before `make dev` runs the full stack — see the
-> checklist. The scripts fail with clear messages if a module dir is missing.
+> Everything builds and the full e2e runs offline with `MOCK=true`. Live sponsor
+> infrastructure activates by dropping real keys into `.env`.

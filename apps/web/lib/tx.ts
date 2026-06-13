@@ -132,7 +132,20 @@ export async function buyerCancel(
 }
 
 async function reportFor(payToken: `0x${string}`): Promise<`0x${string}`> {
+  // USDC (the configured stable) needs no oracle — empty report (SPEC §6).
   if (isStableToken(payToken)) return '0x';
+  // Volatile token: a signed Data Streams report is required.
+  //
+  // MOCK mode: getReport short-circuits to '0x' (the contract's MockVerifier accepts
+  // it), so this is safe to call from the client during the demo.
+  //
+  // PRODUCTION HARDENING (live mode): getReport's live branch reads server-only
+  // secrets (CHAINLINK_DATASTREAMS_API_KEY/SECRET) which are intentionally NOT
+  // NEXT_PUBLIC_ and never inlined into the client bundle. Fetching a live report
+  // MUST therefore happen server-side — add an API route (e.g. /api/datastreams-report,
+  // runtime='nodejs') that calls getReport and returns the blob, and have this client
+  // call that route. Calling getReport directly here in live mode would throw
+  // (missing creds client-side) by design — it never leaks the secret.
   const feed = process.env.NEXT_PUBLIC_DATASTREAMS_FEED_ETHUSD ?? 'ETH/USD';
   return getReport(feed);
 }

@@ -6,8 +6,10 @@
 //
 // fund() flow:
 //   1. read the listing's payToken via escrowAbi.getListing
-//   2. LIVE mode (NEXT_PUBLIC_BLINK_API_KEY set, NEXT_PUBLIC_MOCK!=true): pull USDC into the
-//      buyer's wallet in one tap via the Blink SDK (@swype-org/deposit), then approve + fund.
+//   2. LIVE mode (NEXT_PUBLIC_BLINK_MERCHANT_ID set, NEXT_PUBLIC_MOCK!=true): pull USDC into the
+//      buyer's wallet in one tap via the Blink SDK (@swype-org/deposit) — the SDK is configured
+//      with the public merchantId + a server signer endpoint (no apiKey concept per
+//      docs.blink.cash) — then approve + fund.
 //   3. MOCK mode (NEXT_PUBLIC_MOCK=true): skip Blink — just ERC20 approve + fund directly with
 //      the provided viem walletClient against local anvil (still a real on-chain tx).
 //   4. ensure ERC20 allowance (approve Escrow for tokenAmount if short), call Escrow.fund,

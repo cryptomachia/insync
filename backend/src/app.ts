@@ -1,7 +1,8 @@
-// Fastify API. CORS is open (web app + CRE call it from anywhere in the demo). buildApp is
-// pure wrt the DB it's handed, so tests can pass a temp sqlite. BigInt-bearing rows are
-// serialised to strings already by the DB layer, so JSON.stringify is safe.
-import Fastify, { type FastifyInstance } from 'fastify';
+// Fastify API. CORS is open (web app + CRE call it from anywhere in the demo, SPEC §11) but
+// without credentials, so a reflected origin can't be paired with cookies/Authorization.
+// buildApp is pure wrt the DB it's handed, so tests can pass a temp sqlite. BigInt-bearing
+// rows are serialised to strings already by the DB layer, so JSON.stringify is safe.
+import Fastify, { type FastifyInstance, type FastifyError } from 'fastify';
 import cors from '@fastify/cors';
 import type { HandoffDb, DealRow, ListingRow } from './db.ts';
 import { notify } from './notifications.ts';
@@ -43,11 +44,37 @@ function serializeDeal(d: DealRow) {
 }
 
 const ADDR_RE = /^0x[0-9a-fA-F]{40}$/i;
+// Bound the /notify event label and stored payload so a caller can't bloat sqlite
+// or inject huge log lines. These are generous for the lifecycle labels CRE sends.
+const MAX_EVENT_LEN = 64;
+const MAX_PAYLOAD_BYTES = 4 * 1024;
+// Reject C0 control chars (U+0000-U+001F, incl. CR/LF/TAB) and DEL (U+007F) in the
+// `event` label to prevent log-injection / forged lines in the notification log.
+// Built from a RegExp string with \u escapes so the source stays pure-ASCII.
+// eslint-disable-next-line no-control-regex
+const CONTROL_CHARS_RE = new RegExp('[\\u0000-\\u001f\\u007f]');
 
 export async function buildApp(opts: BuildAppOptions): Promise<FastifyInstance> {
   const { db } = opts;
-  const app = Fastify({ logger: opts.logger ?? false });
-  await app.register(cors, { origin: true });
+  const app = Fastify({
+    logger: opts.logger ?? false,
+    // Cap request bodies (only /notify accepts one). Default is 1 MiB; tighten it.
+    bodyLimit: 16 * 1024,
+  });
+  // CORS intentionally open for the demo (SPEC §11) but credentials disabled, so a
+  // reflected origin can't be combined with cookies/Authorization against a session.
+  await app.register(cors, {
+    origin: true,
+    credentials: false,
+    methods: ['GET', 'POST'],
+  });
+
+  // Consistent error shape; never leak internals/stack traces to clients.
+  app.setErrorHandler((err: FastifyError, req, reply) => {
+    const status = err.statusCode && err.statusCode >= 400 ? err.statusCode : 500;
+    if (status >= 500) req.log.error({ err: String(err) }, 'request failed');
+    reply.code(status).send({ error: status >= 500 ? 'internal error' : err.message });
+  });
 
   app.get('/health', async () => ({ ok: true, service: 'handoff-backend', time: Date.now() }));
 
@@ -65,7 +92,8 @@ export async function buildApp(opts: BuildAppOptions): Promise<FastifyInstance> 
 
   app.get<{ Params: { id: string } }>('/deals/:id', async (req, reply) => {
     const id = req.params.id;
-    if (!/^\d+$/.test(id)) {
+    // Digits only, bounded length (a uint256 is at most 78 decimal digits).
+    if (!/^\d{1,78}$/.test(id)) {
       return reply.code(400).send({ error: 'invalid deal id' });
     }
     const deal = db.getDeal(BigInt(id));
@@ -82,11 +110,25 @@ export async function buildApp(opts: BuildAppOptions): Promise<FastifyInstance> 
     async (req, reply) => {
       const body = req.body ?? {};
       const { dealId, event, payload } = body;
-      if (dealId == null || !/^\d+$/.test(String(dealId))) {
+      // dealId: digits only (becomes BigInt), bounded length so a giant string
+      // can't be turned into an unbounded BigInt.
+      if (dealId == null || !/^\d{1,78}$/.test(String(dealId))) {
         return reply.code(400).send({ error: '`dealId` (numeric) is required' });
       }
-      if (!event || typeof event !== 'string') {
-        return reply.code(400).send({ error: '`event` (string) is required' });
+      // event: a short, single-line label.
+      if (typeof event !== 'string' || event.length === 0 || event.length > MAX_EVENT_LEN) {
+        return reply
+          .code(400)
+          .send({ error: `\`event\` (string, 1-${MAX_EVENT_LEN} chars) is required` });
+      }
+      if (CONTROL_CHARS_RE.test(event)) {
+        return reply.code(400).send({ error: '`event` contains control characters' });
+      }
+      // payload is optional/free-form but bounded so it can't bloat the DB.
+      if (payload !== undefined && JSON.stringify(payload).length > MAX_PAYLOAD_BYTES) {
+        return reply
+          .code(400)
+          .send({ error: `\`payload\` exceeds ${MAX_PAYLOAD_BYTES} bytes` });
       }
       const row = await notify(db, { dealId: BigInt(dealId), event, payload });
       return reply.code(201).send({ ok: true, notification: row });

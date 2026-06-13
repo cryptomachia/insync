@@ -322,7 +322,7 @@ function BuyerActions({
             disabled={disabled || busy === 'confirm'}
             onClick={onConfirm}
           >
-            {busy === 'confirm' ? 'Releasing…' : 'Confirm receipt & release'}
+            {busy === 'confirm' ? 'Releasing…' : 'Confirm receipt'}
           </button>
         )}
       </div>

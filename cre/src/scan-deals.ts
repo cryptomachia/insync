@@ -39,19 +39,25 @@ async function fromBackend(): Promise<{ deals: Deal[]; nowSec: bigint }> {
   if (!env.backendUrl) throw new Error('BACKEND_URL not set; cannot read GET /deals')
   const res = await fetch(env.backendUrl.replace(/\/$/, '') + '/deals')
   if (!res.ok) throw new Error(`GET /deals failed: ${res.status}`)
-  const rows = (await res.json()) as any[]
+  // Backend wraps the array: GET /deals → { deals: [...] } (SPEC §11). Tolerate a
+  // bare array too in case a future endpoint returns one.
+  const json = (await res.json()) as { deals?: unknown[] } | unknown[]
+  const rows = (Array.isArray(json) ? json : (json.deals ?? [])) as Array<Record<string, unknown>>
+  const big = (v: unknown, fallback = 0n): bigint =>
+    v === undefined || v === null ? fallback : BigInt(v as string | number | bigint)
+  const addr = (v: unknown): `0x${string}` => String(v ?? '') as `0x${string}`
   // Backend rows are expected to expose the same fields as getDeal (SPEC §11).
   const deals: Deal[] = rows.map((r) => ({
-    dealId: BigInt(r.dealId ?? r.id),
+    dealId: big(r.dealId ?? r.id),
     state: Number(r.state),
-    buyer: r.buyer,
-    seller: r.seller,
-    payToken: r.payToken,
-    priceUsd1e8: BigInt(r.priceUsd1e8 ?? 0),
-    tokenAmount: BigInt(r.tokenAmount ?? 0),
+    buyer: addr(r.buyer),
+    seller: addr(r.seller),
+    payToken: addr(r.payToken),
+    priceUsd1e8: big(r.priceUsd1e8),
+    tokenAmount: big(r.tokenAmount),
     depositBps: Number(r.depositBps ?? 0),
-    freeCancelUntil: BigInt(r.freeCancelUntil ?? 0),
-    expiry: BigInt(r.expiry ?? 0),
+    freeCancelUntil: big(r.freeCancelUntil),
+    expiry: big(r.expiry),
     sellerCheckedIn: Boolean(r.sellerCheckedIn),
   }))
   return { deals, nowSec: BigInt(Math.floor(Date.now() / 1000)) }
