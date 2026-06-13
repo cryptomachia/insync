@@ -1,0 +1,22 @@
+{
+  "name": "handoff",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Trustless in-person escrow for buying from strangers.",
+  "workspaces": [
+    "packages/*",
+    "apps/*",
+    "backend",
+    "cre",
+    "e2e"
+  ],
+  "scripts": {
+    "build": "npm run build --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present",
+    "dev": "echo 'use: make dev (set up by the e2e/devx agent)'"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
