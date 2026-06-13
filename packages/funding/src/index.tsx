@@ -47,45 +47,40 @@ function env(key: string): string | undefined {
 const RPC =
   env('NEXT_PUBLIC_RPC_URL') ?? env('RPC_URL') ?? 'http://127.0.0.1:8545';
 
-const BLINK_API_KEY = env('NEXT_PUBLIC_BLINK_API_KEY');
 const BLINK_MERCHANT_ID = env('NEXT_PUBLIC_BLINK_MERCHANT_ID');
+// Server signer route that holds the merchant private key (SPEC: docs.blink.cash/integration/signer-endpoint).
+const BLINK_SIGNER_PATH = env('NEXT_PUBLIC_BLINK_SIGNER_PATH') ?? '/api/sign-payment';
 const CHAIN_ID = Number(env('NEXT_PUBLIC_CHAIN_ID') ?? env('CHAIN_ID') ?? '31337');
 
-// Live Blink only when not mocking AND a key is present. Otherwise we run the pure
-// on-chain approve+fund path (works offline against anvil with no Blink account).
-const USE_BLINK = !IS_MOCK && !!BLINK_API_KEY;
+// Live Blink only when not mocking AND a merchantId is configured. Otherwise we run the
+// pure on-chain approve+fund path (works with no Blink account).
+const USE_BLINK = !IS_MOCK && !!BLINK_MERCHANT_ID;
 
 /**
- * Pull USDC into the buyer's wallet via Blink's one-tap deposit modal.
- * Lazy-imported so the package builds/runs with no Blink dep installed (mock mode).
- * Returns when the deposit settles; throws on user cancel / failure.
+ * Pull stablecoins into the buyer's wallet via Blink's one-tap hosted deposit.
+ * The SDK is configured with the public merchantId + the server signer endpoint
+ * (which signs the deposit request with the merchant private key). Lazy-imported so
+ * mock builds need no Blink dep. Resolves when the deposit settles; throws on cancel.
  */
 async function blinkPullDeposit(opts: {
   address: Address;
   token: Address;
   tokenAmount: bigint;
 }): Promise<void> {
-  // Dynamic import keeps @swype-org/deposit optional (only needed for live mode); the
-  // package is not a dependency here so mock builds stay lean. @ts-ignore: the specifier
-  // resolves at runtime in apps that install it, and the .catch() handles its absence.
-  // @ts-ignore -- optional live-only dependency, not installed in mock mode
-  const mod: any = await import(/* webpackIgnore: true */ '@swype-org/deposit').catch(
-    () => {
-      throw new Error(
-        'Blink live mode requires the @swype-org/deposit package. Install it or set NEXT_PUBLIC_MOCK=true.',
-      );
-    },
-  );
+  // @ts-ignore -- optional live-only dependency; .catch handles absence (falls back to approve+fund)
+  const mod: any = await import(/* webpackIgnore: true */ '@swype-org/deposit').catch(() => {
+    throw new Error(
+      'Blink live mode requires the @swype-org/deposit package. Install it or set NEXT_PUBLIC_MOCK=true.',
+    );
+  });
+  const cfg = { merchantId: BLINK_MERCHANT_ID, signer: BLINK_SIGNER_PATH };
   const deposit = mod.createDeposit
-    ? mod.createDeposit({
-        apiKey: BLINK_API_KEY,
-        merchantId: BLINK_MERCHANT_ID,
-        chainId: CHAIN_ID,
-        token: opts.token,
-      })
-    : mod.default?.({ apiKey: BLINK_API_KEY, merchantId: BLINK_MERCHANT_ID });
+    ? mod.createDeposit(cfg)
+    : mod.Deposit
+    ? new mod.Deposit(cfg)
+    : mod.default?.(cfg);
 
-  // Blink takes whole-USDC amounts; USDC has 6 decimals on-chain.
+  // Blink takes whole-USD amounts; the escrow's USDC is 6 decimals.
   const amount = Number(opts.tokenAmount) / 1e6;
   await deposit.requestDeposit({
     amount,
