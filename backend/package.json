@@ -1,0 +1,30 @@
+{
+  "name": "@handoff/backend",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Handoff backend — Escrow event indexer + REST API + notifications.",
+  "scripts": {
+    "dev": "node --preserve-symlinks --import tsx --watch src/server.ts",
+    "start": "node --preserve-symlinks --import tsx src/server.ts",
+    "seed": "node --preserve-symlinks --import tsx src/seed.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "node --preserve-symlinks --import tsx --test test/*.test.ts"
+  },
+  "dependencies": {
+    "@fastify/cors": "^10.0.1",
+    "@handoff/contracts-abi": "file:../packages/contracts-abi",
+    "better-sqlite3": "^11.8.1",
+    "fastify": "^5.2.1",
+    "viem": "^2.21.0"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.12",
+    "@types/node": "^22.10.5",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.3"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
