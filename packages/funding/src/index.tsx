@@ -1,19 +1,10 @@
-// Funding package (Blink one-tap USDC deposit). SPEC §8.
+// Funding package (Blink one-tap USDC deposit). Exposes FundButton (the CTA) and
+// useFunding().fund(args), used by the web app.
 //
-// Exports (FROZEN — do not rename):
-//   FundButton(props)  → the one-tap CTA; calls fund(), fires onFunded(dealId)/onError(e)
-//   useFunding()       → { fund(args): Promise<bigint /* dealId */> }
-//
-// fund() flow:
-//   1. read the listing's payToken via escrowAbi.getListing
-//   2. LIVE mode (NEXT_PUBLIC_BLINK_MERCHANT_ID set, NEXT_PUBLIC_MOCK!=true): pull USDC into the
-//      buyer's wallet in one tap via the Blink SDK (@swype-org/deposit) — the SDK is configured
-//      with the public merchantId + a server signer endpoint (no apiKey concept per
-//      docs.blink.cash) — then approve + fund.
-//   3. MOCK mode (NEXT_PUBLIC_MOCK=true): skip Blink — just ERC20 approve + fund directly with
-//      the provided viem walletClient against local anvil (still a real on-chain tx).
-//   4. ensure ERC20 allowance (approve Escrow for tokenAmount if short), call Escrow.fund,
-//      and resolve with the dealId parsed from the Funded event.
+// fund() reads the listing's payToken, makes sure the buyer holds enough (via
+// Blink when live+enabled, otherwise the test-USDC faucet), then approves the
+// Escrow and calls fund(), resolving with the dealId from the Funded event. In
+// mock mode it skips Blink and just approves + funds against anvil.
 import React from 'react';
 import {
   createPublicClient,

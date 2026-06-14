@@ -1,27 +1,9 @@
-// =============================================================================
-// keeper.local.ts — fully-offline reclaim keeper (run with: npm run keeper:local)
-// =============================================================================
-//
-// This is the demoable, ZERO-CHAINLINK-ACCOUNT twin of the CRE workflow. It
-// performs the EXACT same reclaim sweep — find deals past `expiry` not in a
-// terminal state and call `Escrow.reclaimExpired(dealId, report)` — but using a
-// plain viem wallet (keeper PRIVATE_KEY) against local anvil + the deployed
-// Escrow, instead of the Chainlink DON.
-//
-// It reuses the identical domain rules (src/deals.ts) and sweep algorithm
-// (src/sweep.ts) as workflow.ts, so "what the keeper does" and "what CRE does"
-// can never drift. The ONLY difference is the transport of the final tx:
-//   * CRE:   runtime.report(...) → DON consensus + signature → writeReport
-//   * local: viem writeContract from the keeper EOA
-//
-// Run modes:
-//   npm run keeper:local              one sweep, then exit
-//   npm run keeper:local -- --watch   sweep on an interval (CRE_INTERVAL_MS)
-//   npm run keeper:local -- --dry-run read-only preview, never sends a tx
-//
-// Env (SPEC §14): RPC_URL, ESCROW_ADDRESS, PRIVATE_KEY, CHAIN_ID, USDC_ADDRESS
-// (stable token), BACKEND_URL, DATASTREAMS_FEED_ETHUSD, MOCK.
-// =============================================================================
+// Offline twin of the CRE workflow (npm run keeper:local). Same reclaim sweep as
+// workflow.ts, sharing src/deals.ts and src/sweep.ts, but the final tx goes out
+// via a plain viem wallet (keeper PRIVATE_KEY) against anvil instead of the DON.
+// Flags: --watch sweeps on an interval (CRE_INTERVAL_MS), --dry-run previews
+// without sending. Env: RPC_URL, ESCROW_ADDRESS, PRIVATE_KEY, CHAIN_ID,
+// USDC_ADDRESS, BACKEND_URL, DATASTREAMS_FEED_ETHUSD, MOCK.
 
 import { getReport } from '@handoff/datastreams'
 import { getKeeperEnv } from './env'

@@ -1,45 +1,16 @@
-// =============================================================================
-// Handoff — Chainlink CRE workflow (the escrow's orchestration brain)
-// =============================================================================
+// Chainlink CRE workflow for the escrow. On a cron schedule it scans the Escrow
+// for deals past their expiry that aren't in a terminal state and calls
+// reclaimExpired(dealId, report) for each, then POSTs /notify for the change.
 //
-// On a cron schedule, this workflow sweeps the Escrow for deals that have passed
-// their `expiry` and are NOT in a terminal state, and submits an on-chain
-// `reclaimExpired(dealId, report)` for each one — that contract call is the
-// on-chain state change.
+// Two things are both called "report" here, which is confusing. The CRE report
+// (from runtime.report) is the DON-signed wrapper around our calldata. The
+// `report` arg to reclaimExpired is a Chainlink Data Streams report used to price
+// volatile tokens; it's 0x for stable/USDC deals. We build the Data Streams
+// report into the calldata first, then wrap that calldata in the CRE report.
 //
-// WHERE CHAINLINK CAUSES THE STATE CHANGE (read this):
-//   1. The CRE DON runs this TypeScript (compiled to WASM via the CRE CLI) on
-//      the cron schedule in `config.json`.
-//   2. For each reclaimable deal it builds the calldata for
-//      `Escrow.reclaimExpired(dealId, report)`.
-//   3. `runtime.report(prepareReportRequest(calldata))` asks the DON to reach
-//      consensus and produce a DON-SIGNED report wrapping that calldata.
-//   4. `evmClient.writeReport({ receiver, report })` is the transaction the DON
-//      submits on-chain. The receiver verifies the DON signature and executes
-//      the wrapped calldata → the Escrow transitions Funded/CheckedIn →
-//      Refunded/Forfeited. This is the Chainlink-driven state change.
-//   5. The workflow then POSTs the backend `/notify` for each lifecycle change.
-//
-// IMPORTANT ARCHITECTURAL NOTE (two different "reports"):
-//   * The CRE `report` (steps 3-4) is the DON-signed wrapper around our calldata
-//     — a CRE protocol artifact produced by `runtime.report(...)`.
-//   * The Escrow's `reclaimExpired(dealId, bytes report)` parameter is a
-//     *Chainlink Data Streams* report used to price volatile tokens (SPEC §6).
-//     In MOCK / stable-USDC deals it is `0x`. We obtain it from
-//     @handoff/datastreams.getReport and embed it inside the calldata BEFORE
-//     wrapping that calldata in the CRE report. Don't confuse the two.
-//
-// LIVE vs LOCAL:
-//   * This file is the LIVE workflow, compiled + simulated/deployed with the CRE
-//     CLI (see README + scripts/simulate.sh). It needs the CRE network/keys to
-//     actually broadcast.
-//   * For a zero-Chainlink-account demo, `src/keeper.local.ts` performs the
-//     identical reclaim sweep with a plain viem wallet against local anvil.
-//     Both import the SAME domain rules from `src/deals.ts`.
-//
-// Docs consulted: https://docs.chain.link/cre and
-// https://github.com/smartcontractkit/cre-templates (cre-sdk v1.11.0 API).
-// =============================================================================
+// This is the live workflow (compiled to WASM and run by the DON, needs CRE
+// keys). keeper.local.ts does the same sweep with a plain viem wallet against
+// anvil for local demos; both share the domain rules in src/deals.ts.
 
 import {
   bytesToHex,
@@ -63,9 +34,7 @@ import { z } from 'zod'
 import { escrowAbi } from '@handoff/contracts-abi'
 import { decodeDeal, isReclaimable, isVolatile, reclaimOutcome, type GetDealResult } from './deals'
 
-// -----------------------------------------------------------------------------
 // Config schema (config.json, validated at runtime by the CRE Runner).
-// -----------------------------------------------------------------------------
 const configSchema = z.object({
   // Cron schedule (6-field: sec min hour dom mon dow). e.g. "0 */1 * * * *".
   schedule: z.string(),
@@ -89,16 +58,10 @@ const configSchema = z.object({
 
 type Config = z.infer<typeof configSchema>
 
-// -----------------------------------------------------------------------------
-// Mock Data Streams report.
-//
-// In the LIVE CRE runtime we cannot import @handoff/datastreams (it would pull
-// Node-only code into the WASM sandbox), so we inline the same MOCK contract:
-// stable/USDC deals → `0x`. A volatile-token integration would fetch the signed
-// report through the CRE HTTPClient capability against the Data Streams REST
-// API and pass it here; for the MOCK path this returns `0x`, exactly like
-// @handoff/datastreams.getReport.
-// -----------------------------------------------------------------------------
+// Mock Data Streams report. The live CRE runtime can't import @handoff/datastreams
+// (it would drag Node-only code into the WASM sandbox), so we inline the same mock:
+// stable/USDC deals get 0x. A volatile-token path would fetch the signed report
+// via the CRE HTTPClient against the Data Streams REST API and pass it here.
 const MOCK_REPORT: `0x${string}` = '0x'
 
 // Read one deal via the CRE EVMClient (DON consensus read at finalized block).
@@ -153,9 +116,7 @@ function postNotify(
   }
 }
 
-// -----------------------------------------------------------------------------
 // The cron handler: the reclaim sweep.
-// -----------------------------------------------------------------------------
 const onCronTrigger = (runtime: Runtime<Config>) => {
   const cfg = runtime.config
   const evmCfg = cfg.evms[0]
@@ -204,18 +165,18 @@ const onCronTrigger = (runtime: Runtime<Config>) => {
       })
     }
 
-    // 1) Build the Escrow calldata (embeds the Data Streams `report`).
+    // Build the Escrow calldata (embeds the Data Streams report).
     const reclaimCalldata = encodeFunctionData({
       abi: escrowAbi,
       functionName: 'reclaimExpired',
       args: [id, report],
     })
 
-    // 2) Ask the DON to produce a signed report wrapping that calldata.
+    // Have the DON produce a signed report wrapping that calldata.
     const creReport = runtime.report(prepareReportRequest(reclaimCalldata)).result()
 
-    // 3) Broadcast: the DON submits the tx; the receiver (the Escrow, which must
-    //    accept DON-signed reports) verifies + executes → ON-CHAIN STATE CHANGE.
+    // The DON submits the tx; the Escrow verifies the DON signature and executes
+    // the wrapped calldata, which is where the on-chain state change happens.
     const resp = evmClient.writeReport(runtime, { receiver: escrow, report: creReport }).result()
 
     if (resp.txStatus !== TxStatus.SUCCESS) {
@@ -245,9 +206,7 @@ const onCronTrigger = (runtime: Runtime<Config>) => {
   return { reclaimed }
 }
 
-// -----------------------------------------------------------------------------
-// Wiring: register the cron handler. (cre-sdk v1.11.0 init/Runner pattern.)
-// -----------------------------------------------------------------------------
+// Register the cron handler.
 const initWorkflow = (config: Config) => {
   const cron = new CronCapability()
   return [handler(cron.trigger({ schedule: config.schedule }), onCronTrigger)]

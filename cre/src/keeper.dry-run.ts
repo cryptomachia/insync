@@ -1,17 +1,8 @@
-// =============================================================================
-// keeper.dry-run.ts — exercise the reclaim sweep with NO chain at all.
-// =============================================================================
-//
-// Runs the real `runSweep` algorithm (the same one keeper.local.ts and the CRE
-// workflow use) against an in-memory mock Escrow seeded with deals in every
-// relevant state. This proves the keeper logic end-to-end — candidate
-// selection, stable vs volatile report handling, terminal-state skipping, and
-// the reclaimExpired call path — with zero anvil, zero Chainlink, zero RPC.
-//
-// Run with:  npm run keeper:dry-run   (or: npx tsx src/keeper.dry-run.ts)
-//
-// Exits non-zero if the observed reclaim set differs from the expected set, so
-// it doubles as a self-check in CI.
+// Runs the real runSweep against an in-memory mock Escrow seeded with deals in
+// every relevant state, so we can exercise candidate selection, stable vs
+// volatile report handling, terminal-state skipping, and the reclaimExpired path
+// with no anvil/Chainlink/RPC. npm run keeper:dry-run. Exits non-zero if the
+// reclaim set doesn't match expectations, so it works as a CI check too.
 
 import { DealState } from '@handoff/contracts-abi'
 import type { Deal } from './deals'

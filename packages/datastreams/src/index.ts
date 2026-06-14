@@ -1,21 +1,11 @@
-// @handoff/datastreams — Chainlink Data Streams client (SPEC §6).
+// Chainlink Data Streams client. getReport(feedId) fetches a signed report (raw
+// fullReport bytes) that the on-chain Verifier proxy checks, and is the `bytes`
+// blob passed to Escrow.confirmReceipt/buyerCancel/reclaimExpired.
+// getTokenPriceUsd1e8(feedId) decodes the report to an 8-decimal USD price for the
+// UI (Data Streams v3 prices are 18-decimal, scaled 1e18 -> 1e8).
 //
-// Purpose: fetch a signed Chainlink Data Streams report for a feed and produce the
-// `bytes` blob passed to Escrow.confirmReceipt/buyerCancel/reclaimExpired, plus a
-// price helper for the UI.
-//
-// LIVE mode:
-//   - getReport(feedId) fetches a signed report from the Data Streams REST API
-//     (HMAC-authenticated) and returns the raw `fullReport` bytes (0x...) which the
-//     on-chain Verifier proxy verifies.
-//   - getTokenPriceUsd1e8(feedId) ABI-decodes the report and returns the price in
-//     8-decimal USD (Data Streams v3 prices are 18-decimal; we scale 1e18 -> 1e8).
-//
-// MOCK mode (MOCK=true / NEXT_PUBLIC_MOCK=true): matches the contract's MockVerifier:
-//   - getReport returns '0x'  (the MockVerifier accepts empty bytes)
-//   - getTokenPriceUsd1e8 returns 4000_00000000 ($4000)
-//
-// Frozen exports (SPEC §6): getReport, getTokenPriceUsd1e8, FEEDS, MOCK.
+// In mock mode (MOCK / NEXT_PUBLIC_MOCK) getReport returns 0x to match the
+// contract's MockVerifier, and getTokenPriceUsd1e8 returns $4000.
 
 import {
   buildAuthHeaders,

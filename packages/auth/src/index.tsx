@@ -1,16 +1,11 @@
-// @handoff/auth — Dynamic embedded wallets (email login), with a local mock mode.
-// SPEC §7. Exports are a frozen contract the web app depends on:
-//   HandoffAuthProvider({ children })
-//   useAuth()        -> { ready, isConnected, address?, email?, login, logout }
-//   useWalletClient() -> viem WalletClient | undefined
-//   AuthButton()
+// @handoff/auth — Dynamic embedded wallets (email login) with a local mock mode.
+// Used by the web app: HandoffAuthProvider, useAuth(), useWalletClient(),
+// AuthButton().
 //
-// Mode selection:
-//   NEXT_PUBLIC_MOCK=true             -> deterministic local anvil wallet, no Dynamic account.
-//   else (NEXT_PUBLIC_DYNAMIC_ENV_ID) -> live Dynamic embedded wallet.
-//
-// MOCK is read once at module load; it never changes during a session, so the
-// branch below is stable and does not violate the rules of hooks.
+// With NEXT_PUBLIC_MOCK=true we use a deterministic local anvil wallet; otherwise
+// (NEXT_PUBLIC_DYNAMIC_ENV_ID) the live Dynamic embedded wallet. MOCK is read once
+// at module load and never changes during a session, so the conditional hook
+// calls below are stable across renders.
 import React from 'react';
 import type { WalletClient } from 'viem';
 import type { AuthState } from './types';

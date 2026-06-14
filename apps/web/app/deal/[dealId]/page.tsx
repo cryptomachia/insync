@@ -200,8 +200,7 @@ export default function DealPage({
   );
 }
 
-/* ----------------------------- Seller view ----------------------------- */
-
+// Seller actions
 function SellerActions({
   deal,
   busy,
@@ -269,8 +268,7 @@ function SellerActions({
   );
 }
 
-/* ----------------------------- Buyer view ------------------------------ */
-
+// Buyer actions
 function BuyerActions({
   deal,
   busy,
@@ -357,8 +355,7 @@ function BuyerActions({
   );
 }
 
-/* ----------------------------- Terminal -------------------------------- */
-
+// Terminal-state summary
 function TerminalCard({ deal }: { deal: Deal }) {
   const map: Record<number, { title: string; tone: 'ok' | 'info' }> = {
     [DealState.Completed]: { title: 'Completed — seller paid, deposit returned.', tone: 'ok' },
@@ -373,8 +370,7 @@ function TerminalCard({ deal }: { deal: Deal }) {
   );
 }
 
-/* ----------------------------- Timeline -------------------------------- */
-
+// Timeline
 function fmtTime(ms?: number): string {
   if (!ms) return '';
   return new Date(ms).toLocaleString(undefined, {
@@ -447,8 +443,7 @@ function Timeline({ deal }: { deal: Deal }) {
   );
 }
 
-/* ------------------------------ bits ----------------------------------- */
-
+// Small shared bits
 function StatePill({ state }: { state: DealState }) {
   const tone =
     state === DealState.Completed

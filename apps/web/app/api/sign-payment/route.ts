@@ -1,7 +1,7 @@
-// Blink merchant signer endpoint (SPEC: docs.blink.cash/integration/signer-endpoint).
-// The @swype-org/deposit SDK POSTs the deposit request here; we build the canonical
-// payload, base64url-encode it, sign it with ECDSA P-256 + SHA-256 using the merchant
-// private key, and return the auth envelope. The private key NEVER leaves the server.
+// Blink merchant signer endpoint. The @swype-org/deposit SDK POSTs the deposit
+// request here; we build the canonical payload, base64url-encode it, sign it with
+// ECDSA P-256 + SHA-256 using the merchant private key, and return the auth
+// envelope. The private key never leaves the server.
 import { NextRequest, NextResponse } from 'next/server';
 import { randomUUID, createSign } from 'node:crypto';
 
@@ -43,20 +43,12 @@ function validate(b: any): string[] {
   return e;
 }
 
-// PRODUCTION HARDENING (per docs.blink.cash/integration/signer-endpoint):
-// This route is intentionally OPEN for the demo. Before any real-money
-// deployment it MUST be locked down so it can only mint a signed deposit envelope
-// for a legitimate, authenticated caller. Minimum bar:
-//   1. AUTHENTICATE the caller — require a session/JWT from the logged-in Dynamic
-//      user; reject anonymous requests.
-//   2. VERIFY ADDRESS OWNERSHIP — confirm `body.address` belongs to that
-//      authenticated user (a signed challenge or the session's wallet), so a caller
-//      can't have funds signed toward an address they don't control.
-//   3. RATE-LIMIT / replay-protect per user+IP (the idempotencyKey is generated
-//      server-side here, but throttling still matters) to stop signing-oracle abuse.
-//   4. PIN allowed chainId(s)/token(s) to your deployment instead of accepting any.
-// The merchant private key (MERCHANT_PRIVATE_KEY_B64) is read server-side only and
-// never leaves this route — keep it that way.
+// This route is open for the demo. Before any real-money deployment, lock it down
+// so it only signs a deposit envelope for an authenticated caller: require a
+// session/JWT from the logged-in Dynamic user, confirm body.address belongs to
+// that user so funds can't be signed toward an address they don't control,
+// rate-limit/replay-protect per user+IP, and pin allowed chainIds/tokens instead
+// of accepting any. The merchant key stays server-side only.
 export async function POST(req: NextRequest) {
   let body: any;
   try {
