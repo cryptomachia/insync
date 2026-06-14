@@ -15,8 +15,9 @@ coverage/
 *.tsbuildinfo
 
 # ---- Foundry ----
-# `lib/` holds forge-installed deps (forge-std, OpenZeppelin) — reinstall with `forge install`.
-lib/
+# forge-installed deps (forge-std, OpenZeppelin) — scoped to contracts/ so it does
+# not also match apps/web/lib (app source). Reinstall with `forge install`.
+/contracts/lib/
 cache/
 **/cache/
 # Foundry writes the deployer PRIVATE KEY into broadcast/<script>/<chain>/run-latest.json.

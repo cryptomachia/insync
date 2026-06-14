@@ -1,0 +1,17 @@
+node_modules
+**/node_modules
+.next
+apps/web/.next
+.git
+contracts/out
+contracts/cache
+contracts/broadcast
+contracts/lib
+backend/handoff.db
+backend/*.db
+backend/*.db-shm
+backend/*.db-wal
+e2e/test-results
+e2e/playwright-report
+**/*.log
+**/.DS_Store
