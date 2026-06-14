@@ -6,10 +6,12 @@ import Fastify, { type FastifyInstance, type FastifyError } from 'fastify';
 import cors from '@fastify/cors';
 import type { HandoffDb, DealRow, ListingRow } from './db.ts';
 import { notify } from './notifications.ts';
+import type { Faucet } from './faucet.ts';
 
 export interface BuildAppOptions {
   db: HandoffDb;
   logger?: boolean;
+  faucet?: Faucet;
 }
 
 function serializeListing(l: ListingRow) {
@@ -55,7 +57,7 @@ const MAX_PAYLOAD_BYTES = 4 * 1024;
 const CONTROL_CHARS_RE = new RegExp('[\\u0000-\\u001f\\u007f]');
 
 export async function buildApp(opts: BuildAppOptions): Promise<FastifyInstance> {
-  const { db } = opts;
+  const { db, faucet } = opts;
   const app = Fastify({
     logger: opts.logger ?? false,
     // Listing photos (base64 data URLs) post to /listings/:id/meta, so allow a few MiB.
@@ -308,6 +310,17 @@ export async function buildApp(opts: BuildAppOptions): Promise<FastifyInstance> 
       typeof b.listingId === 'string' && /^\d{1,78}$/.test(b.listingId) ? b.listingId : undefined;
     db.upsertCoordination(BigInt(req.params.id), b.role, { lat, lng, phone, email, note, listingId });
     return reply.code(201).send({ ok: true });
+  });
+
+  // ---- Test-USDC faucet (testnet only; mints the demo pay token to a buyer) ----
+  app.post<{ Body: { address?: string } }>('/faucet', async (req, reply) => {
+    if (!faucet) return reply.code(503).send({ error: 'faucet not configured' });
+    const address = req.body?.address;
+    if (typeof address !== 'string' || !ADDR_RE.test(address)) {
+      return reply.code(400).send({ error: 'valid `address` is required' });
+    }
+    const result = await faucet.drip(address as `0x${string}`);
+    return reply.code(200).send({ ok: true, ...result });
   });
 
   return app;

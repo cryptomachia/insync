@@ -77,8 +77,8 @@ export default function ReceiptPage({ params }: { params: { dealId: string } }) 
       <div className="space-y-4">
         <h1 className="text-xl font-bold">Receipt</h1>
         <ErrorNote>{err}</ErrorNote>
-        <Link href="/my-deals" className="btn-secondary">
-          Back to my deals
+        <Link href="/trade-history" className="btn-secondary">
+          Back to trade history
         </Link>
       </div>
     );

@@ -53,6 +53,10 @@ const RPC =
 const BLINK_MERCHANT_ID = norm(process.env.NEXT_PUBLIC_BLINK_MERCHANT_ID);
 // Server signer route that holds the merchant private key (SPEC: docs.blink.cash/integration/signer-endpoint).
 const BLINK_SIGNER_PATH = norm(process.env.NEXT_PUBLIC_BLINK_SIGNER_PATH) ?? '/api/sign-payment';
+// Blink's hosted deposit is a browser SDK that can't be dynamically imported in our bundle, so
+// it's OFF unless explicitly enabled. By default we top up the buyer from the test-USDC faucet.
+const ENABLE_BLINK = process.env.NEXT_PUBLIC_ENABLE_BLINK === 'true';
+const BACKEND_URL = norm(process.env.NEXT_PUBLIC_BACKEND_URL) ?? 'http://127.0.0.1:8787';
 const CHAIN_ID = Number(
   norm(process.env.NEXT_PUBLIC_CHAIN_ID) ?? norm(process.env.CHAIN_ID) ?? '31337',
 );
@@ -62,9 +66,38 @@ const CHAIN_ID = Number(
 // so pass the real target chain explicitly. (undefined on anvil/local is fine — no guard.)
 const targetChain = CHAIN_ID === baseSepolia.id ? baseSepolia : undefined;
 
-// Live Blink only when not mocking AND a merchantId is configured. Otherwise we run the
-// pure on-chain approve+fund path (works with no Blink account).
-const USE_BLINK = !IS_MOCK && !!BLINK_MERCHANT_ID;
+// Live Blink only when explicitly enabled AND configured. Otherwise we top up via the
+// test-USDC faucet and run the pure on-chain approve+fund path.
+const USE_BLINK = !IS_MOCK && ENABLE_BLINK && !!BLINK_MERCHANT_ID;
+
+/**
+ * Top up the buyer's wallet with test USDC via the backend faucet, then wait for the
+ * balance to reflect on-chain. Used in live testnet demo mode where the pay token is a
+ * faucet-mintable test stablecoin.
+ */
+async function faucetTopUp(args: {
+  pub: ReturnType<typeof createPublicClient>;
+  token: Address;
+  owner: Address;
+  need: bigint;
+}): Promise<void> {
+  const { pub, token, owner, need } = args;
+  await fetch(`${BACKEND_URL}/faucet`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ address: owner }),
+  }).catch(() => {});
+  for (let i = 0; i < 25; i++) {
+    const bal = (await pub.readContract({
+      address: token,
+      abi: erc20Abi,
+      functionName: 'balanceOf',
+      args: [owner],
+    })) as bigint;
+    if (bal >= need) return;
+    await new Promise((r) => setTimeout(r, 1000));
+  }
+}
 
 /**
  * Pull stablecoins into the buyer's wallet via Blink's one-tap hosted deposit.
@@ -176,21 +209,40 @@ export function useFunding() {
     const active = listing[4];
     if (!active) throw new Error('listing is not active');
 
-    // 2. LIVE: only pull funds via Blink if the wallet doesn't already hold enough of the
-    //    pay token. A wallet that's already funded skips straight to approve+fund.
-    if (USE_BLINK) {
-      const balance = (await pub.readContract({
+    // 2. Make sure the buyer holds enough of the pay token. If short, pull funds via Blink
+    //    (when enabled) and/or top up from the test-USDC faucet. A wallet that already holds
+    //    enough skips straight to approve+fund — and pre-funding means the wallet can simulate
+    //    the fund tx and show the expected balance change in its confirmation.
+    const readBalance = async () =>
+      (await pub.readContract({
         address: payToken,
         abi: erc20Abi,
         functionName: 'balanceOf',
         args: [account.address],
       })) as bigint;
+
+    let balance = await readBalance();
+    if (balance < args.tokenAmount) {
+      if (USE_BLINK) {
+        try {
+          await blinkPullDeposit({
+            address: account.address,
+            token: payToken,
+            tokenAmount: args.tokenAmount,
+          });
+          balance = await readBalance();
+        } catch {
+          /* Blink unavailable — fall through to the faucet */
+        }
+      }
       if (balance < args.tokenAmount) {
-        await blinkPullDeposit({
-          address: account.address,
-          token: payToken,
-          tokenAmount: args.tokenAmount,
-        });
+        await faucetTopUp({ pub, token: payToken, owner: account.address, need: args.tokenAmount });
+        balance = await readBalance();
+      }
+      if (balance < args.tokenAmount) {
+        throw new Error(
+          'Could not get enough test USDC into your wallet automatically. Try again in a moment.',
+        );
       }
     }
 

@@ -8,10 +8,13 @@ export type BackendDeal = {
   buyer: string;
   seller: string;
   state: number;
-  priceUsd1e8: string;
+  stateName?: string;
+  priceUsd1e8?: string;
   payToken: string;
+  tokenAmount?: string;
   depositBps?: number;
   sellerCheckedIn?: boolean;
+  updatedAt?: number;
 };
 
 // Off-chain listing metadata (item name, description, photo) keyed by on-chain listingId.

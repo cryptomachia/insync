@@ -23,7 +23,7 @@ export default function Home() {
         <HomeLink href="/sell" title="Sell an item" sub="Post a photo, set a price, get a link to share." />
         <HomeLink href="/buy" title="Buy an item" sub="Open a seller's link, lock your payment, then meet." />
         <HomeLink href="/my-listings" title="My listings" sub="See, edit, withdraw or relist your items." />
-        <HomeLink href="/my-deals" title="My deals" sub="Track everything you're buying and selling." />
+        <HomeLink href="/trade-history" title="Trade history" sub="Track everything you're buying and selling." />
       </div>
 
       <section className="card space-y-4">

@@ -5,6 +5,7 @@ import { loadConfig } from './env.ts';
 import { openDb } from './db.ts';
 import { buildApp } from './app.ts';
 import { createIndexer } from './indexer.ts';
+import { createFaucet } from './faucet.ts';
 
 // Name the process so it shows up as "insync-backend" in Activity Monitor / `ps`.
 process.title = 'insync-backend';
@@ -12,7 +13,19 @@ process.title = 'insync-backend';
 async function main(): Promise<void> {
   const cfg = loadConfig();
   const db = openDb(cfg.databasePath);
-  const app = await buildApp({ db, logger: true });
+
+  // Enable the test-USDC faucet only when a signer key + token address are configured.
+  const faucet =
+    cfg.faucetPrivateKey && cfg.usdcAddress
+      ? createFaucet({
+          rpcUrl: cfg.rpcUrl,
+          privateKey: cfg.faucetPrivateKey,
+          token: cfg.usdcAddress,
+          chainId: cfg.chainId,
+        })
+      : undefined;
+
+  const app = await buildApp({ db, logger: true, faucet });
 
   if (cfg.escrowAddress) {
     const indexer = createIndexer({

@@ -9,6 +9,7 @@ import { saveListingMeta } from '@/lib/backend';
 import { parseUsdToUsd1e8, fmtUsd1e8, depositUsd1e8, totalUsd1e8 } from '@/lib/format';
 import { ErrorNote, SuccessNote, InfoNote, errMsg } from '@/components/Notice';
 import ShareListing from '@/components/ShareListing';
+import MeetTimePicker from '@/components/MeetTimePicker';
 
 // "No-show protection" levels — plain language instead of bps/earnest-money jargon.
 const PROTECTION = [
@@ -59,6 +60,7 @@ export default function SellPage() {
   const [notes, setNotes] = useState('');
   const [emailInput, setEmailInput] = useState('');
   const [locBusy, setLocBusy] = useState(false);
+  const [dragging, setDragging] = useState(false);
 
   // Prefill the contact email from the signed-in account once it loads.
   useEffect(() => {
@@ -73,14 +75,28 @@ export default function SellPage() {
   const deposit = depositUsd1e8(priceUsd1e8, depositBps);
   const buyerPays = totalUsd1e8(priceUsd1e8, depositBps);
 
-  async function onPickImage(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
+  async function handleFile(file: File | undefined) {
     if (!file) return;
+    if (!file.type.startsWith('image/')) {
+      setError('That file isn’t an image. Drop a photo (JPG/PNG).');
+      return;
+    }
     try {
       setImage(await compressImage(file));
+      setError(null);
     } catch {
       setError('Could not read that image. Try a different photo.');
     }
+  }
+
+  function onPickImage(e: React.ChangeEvent<HTMLInputElement>) {
+    void handleFile(e.target.files?.[0]);
+  }
+
+  function onDrop(e: React.DragEvent) {
+    e.preventDefault();
+    setDragging(false);
+    void handleFile(e.dataTransfer.files?.[0]);
   }
 
   function useMyLocation() {
@@ -204,7 +220,14 @@ export default function SellPage() {
 
       <div className="card space-y-5">
         {/* Photo */}
-        <div>
+        <div
+          onDragOver={(e) => {
+            e.preventDefault();
+            setDragging(true);
+          }}
+          onDragLeave={() => setDragging(false)}
+          onDrop={onDrop}
+        >
           <span className="label">Photo</span>
           <input ref={fileRef} type="file" accept="image/*" hidden onChange={onPickImage} />
           {image ? (
@@ -223,10 +246,14 @@ export default function SellPage() {
           ) : (
             <button
               onClick={() => fileRef.current?.click()}
-              className="flex aspect-video w-full flex-col items-center justify-center gap-1 rounded-xl border border-dashed border-white/15 bg-white/[0.02] text-zinc-400 hover:bg-white/[0.05]"
+              className={`flex aspect-video w-full flex-col items-center justify-center gap-1 rounded-xl border border-dashed text-zinc-400 transition ${
+                dragging
+                  ? 'border-indigo-400 bg-indigo-500/10 text-indigo-200'
+                  : 'border-white/15 bg-white/[0.02] hover:bg-white/[0.05]'
+              }`}
             >
               <span className="text-2xl">📷</span>
-              <span className="text-sm">Add a photo</span>
+              <span className="text-sm">{dragging ? 'Drop the photo here' : 'Drag & drop a photo, or click to choose'}</span>
             </button>
           )}
         </div>
@@ -334,14 +361,8 @@ export default function SellPage() {
 
         {/* Meeting time */}
         <div>
-          <label className="label" htmlFor="meettime">Proposed meeting time</label>
-          <input
-            id="meettime"
-            className="input"
-            value={meetTime}
-            onChange={(e) => setMeetTime(e.target.value)}
-            placeholder="e.g. Sat 3:00 PM — or “evenings this week”"
-          />
+          <span className="label">Proposed meeting time</span>
+          <MeetTimePicker value={meetTime} onChange={setMeetTime} />
         </div>
 
         {/* Email */}

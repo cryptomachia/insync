@@ -12,6 +12,7 @@ import {
 } from '@/lib/backend';
 import { shortAddr } from '@/lib/format';
 import { ErrorNote, InfoNote, errMsg } from '@/components/Notice';
+import MeetTimePicker from '@/components/MeetTimePicker';
 
 export default function MyListingsPage() {
   const { isConnected, address, login } = useAuth();
@@ -244,7 +245,7 @@ function EditForm({ listingId, onSaved }: { listingId: string; onSaved: () => vo
         />
       </Field>
       <Field label="Proposed meeting time">
-        <input className="input" value={meta.meetTime ?? ''} onChange={(e) => set({ meetTime: e.target.value })} />
+        <MeetTimePicker value={meta.meetTime ?? ''} onChange={(v) => set({ meetTime: v })} />
       </Field>
       <Field label="Phone (shared with the buyer)">
         <input
