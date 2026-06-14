@@ -32,7 +32,7 @@ export default function BuyListingPage({ params }: { params: { listingId: string
     }
   }, [listingId]);
 
-  const { isConnected, login, address } = useAuth();
+  const { isConnected, login, address, email } = useAuth();
   const walletClient = useWalletClient();
 
   const [listing, setListing] = useState<Listing | null>(null);
@@ -129,6 +129,9 @@ export default function BuyListingPage({ params }: { params: { listingId: string
       )}
 
       {!listing.active && <ErrorNote>This listing is no longer available.</ErrorNote>}
+      {meta?.archived && (
+        <ErrorNote>The seller has withdrawn this listing — please check with them before paying.</ErrorNote>
+      )}
 
       <div className="card space-y-3">
         <div className="font-semibold">What you&apos;ll pay</div>
@@ -150,10 +153,16 @@ export default function BuyListingPage({ params }: { params: { listingId: string
         )}
       </div>
 
-      {(meta?.meetAddress || meta?.meetLat != null) && (
+      {(meta?.meetAddress ||
+        meta?.meetLat != null ||
+        meta?.meetTime ||
+        meta?.notes ||
+        meta?.sellerPhone ||
+        meta?.sellerEmail) && (
         <div className="card space-y-2">
-          <div className="font-semibold">Where you&apos;ll meet</div>
+          <div className="font-semibold">Meetup details</div>
           {meta?.meetAddress && <div className="surface text-sm text-zinc-200">📍 {meta.meetAddress}</div>}
+          {meta?.meetTime && <div className="text-sm text-zinc-300">🕒 {meta.meetTime}</div>}
           {meta?.meetLat != null && meta?.meetLng != null && (
             <>
               <iframe
@@ -172,11 +181,19 @@ export default function BuyListingPage({ params }: { params: { listingId: string
               </a>
             </>
           )}
+          {meta?.notes && (
+            <div className="surface text-sm text-zinc-300">
+              <span className="text-zinc-500">Seller&apos;s note:</span> {meta.notes}
+            </div>
+          )}
           {meta?.sellerPhone && (
             <a className="btn-secondary" href={`tel:${meta.sellerPhone}`}>📞 Seller · {meta.sellerPhone}</a>
           )}
+          {meta?.sellerEmail && (
+            <a className="btn-secondary" href={`mailto:${meta.sellerEmail}`}>✉️ {meta.sellerEmail}</a>
+          )}
           <p className="text-xs text-zinc-500">
-            You&apos;ll get the seller&apos;s live location + directions after you lock payment.
+            You&apos;ll get the seller&apos;s live location + full contact after you lock payment.
           </p>
         </div>
       )}
@@ -198,15 +215,16 @@ export default function BuyListingPage({ params }: { params: { listingId: string
               walletClient={walletClient}
               onFunded={(d) => {
                 setDealId(d);
-                // Seed the seller's listed location + phone into the deal so both
-                // parties see them on the coordination screen.
-                if (meta && (meta.meetLat != null || meta.sellerPhone)) {
-                  shareCoordination(d, 'seller', {
-                    lat: meta.meetLat ?? undefined,
-                    lng: meta.meetLng ?? undefined,
-                    phone: meta.sellerPhone ?? undefined,
-                  }).catch(() => {});
-                }
+                // Seed the seller's listed location/phone/email + the listing link into the
+                // deal so the deal page can show full meetup details; seed the buyer's email.
+                shareCoordination(d, 'seller', {
+                  lat: meta?.meetLat ?? undefined,
+                  lng: meta?.meetLng ?? undefined,
+                  phone: meta?.sellerPhone ?? undefined,
+                  email: meta?.sellerEmail ?? undefined,
+                  listingId,
+                }).catch(() => {});
+                if (email) shareCoordination(d, 'buyer', { email }).catch(() => {});
               }}
               onError={(e) => setFundErr(errMsg(e))}
             />

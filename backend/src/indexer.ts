@@ -56,22 +56,26 @@ export function handleEvent(
       });
       break;
 
-    case 'Funded':
+    case 'Funded': {
+      // The Funded event doesn't carry payToken — it's a property of the listing the deal
+      // was funded against, so look it up from the already-indexed listing.
+      const listingId = a.listingId as bigint;
+      const payToken = db.getListing(listingId)?.pay_token ?? '';
       db.upsertDealFromFunded({
         dealId: a.dealId as bigint,
-        listingId: a.listingId as bigint,
+        listingId,
         buyer: a.buyer as string,
         seller: a.seller as string,
-        payToken: a.payToken as string,
+        payToken,
         tokenAmount: a.tokenAmount as bigint,
         freeCancelUntil: a.freeCancelUntil as bigint,
         expiry: a.expiry as bigint,
         block,
       });
       // A funded listing is no longer purchasable.
-      // (listingId carried on the Funded event lets us deactivate without a getListing read.)
-      db.setListingActive(a.listingId as bigint, false);
+      db.setListingActive(listingId, false);
       break;
+    }
 
     case 'CheckedIn':
       db.setDealState(a.dealId as bigint, DealState.SellerCheckedIn, { sellerCheckedIn: true });
@@ -117,11 +121,22 @@ export function createIndexer(opts: IndexerOptions): Indexer {
         blockNumber?: bigint | null;
       };
       if (!decoded.eventName || !decoded.args) continue;
-      handleEvent(db, {
-        eventName: decoded.eventName,
-        args: decoded.args,
-        blockNumber: decoded.blockNumber ?? null,
-      });
+      // A single malformed/unexpected log shouldn't abort the whole backfill.
+      try {
+        handleEvent(db, {
+          eventName: decoded.eventName,
+          args: decoded.args,
+          blockNumber: decoded.blockNumber ?? null,
+        });
+      } catch (err) {
+        console.error(
+          JSON.stringify({
+            kind: 'indexer_event_error',
+            event: decoded.eventName,
+            error: String(err),
+          }),
+        );
+      }
       if (decoded.blockNumber != null && decoded.blockNumber > maxBlock) {
         maxBlock = decoded.blockNumber;
       }
@@ -129,17 +144,30 @@ export function createIndexer(opts: IndexerOptions): Indexer {
     if (maxBlock > db.getCursor()) db.setCursor(maxBlock);
   }
 
+  // Public RPCs cap eth_getLogs at ~50k blocks per request, so walk the range in windows.
+  const MAX_RANGE = 45_000n;
+
   async function backfill(): Promise<void> {
     const cursor = db.getCursor();
-    const fromBlock = opts.fromBlock ?? (cursor > 0n ? cursor + 1n : 0n);
-    const logs = await client.getContractEvents({
-      abi: escrowAbi,
-      address: escrowAddress,
-      fromBlock,
-      toBlock: 'latest',
-    });
-    applyLogs(logs as unknown as Log[]);
     const head = await client.getBlockNumber();
+    // Resume from the cursor if we have one; otherwise from the configured deploy block
+    // (falling back to a recent window so we never scan from genesis).
+    let from =
+      cursor > 0n
+        ? cursor + 1n
+        : (opts.fromBlock ?? (head > MAX_RANGE ? head - MAX_RANGE : 0n));
+    while (from <= head) {
+      const to = from + MAX_RANGE - 1n > head ? head : from + MAX_RANGE - 1n;
+      const logs = await client.getContractEvents({
+        abi: escrowAbi,
+        address: escrowAddress,
+        fromBlock: from,
+        toBlock: to,
+      });
+      applyLogs(logs as unknown as Log[]);
+      if (to > db.getCursor()) db.setCursor(to);
+      from = to + 1n;
+    }
     if (head > db.getCursor()) db.setCursor(head);
   }
 

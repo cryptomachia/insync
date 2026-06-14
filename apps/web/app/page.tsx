@@ -22,6 +22,7 @@ export default function Home() {
       <div className="grid gap-3">
         <HomeLink href="/sell" title="Sell an item" sub="Post a photo, set a price, get a link to share." />
         <HomeLink href="/buy" title="Buy an item" sub="Open a seller's link, lock your payment, then meet." />
+        <HomeLink href="/my-listings" title="My listings" sub="See, edit, withdraw or relist your items." />
         <HomeLink href="/my-deals" title="My deals" sub="Track everything you're buying and selling." />
       </div>
 

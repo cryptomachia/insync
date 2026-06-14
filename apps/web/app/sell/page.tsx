@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useAuth, useWalletClient } from '@handoff/auth';
 import { getAddresses } from '@handoff/contracts-abi';
@@ -41,7 +41,7 @@ async function compressImage(file: File, max = 1100, quality = 0.72): Promise<st
 }
 
 export default function SellPage() {
-  const { isConnected, login } = useAuth();
+  const { isConnected, login, address, email } = useAuth();
   const walletClient = useWalletClient();
   const { usdc } = getAddresses();
   const fileRef = useRef<HTMLInputElement>(null);
@@ -54,7 +54,15 @@ export default function SellPage() {
   const [meetAddress, setMeetAddress] = useState('');
   const [meetCoords, setMeetCoords] = useState<{ lat: number; lng: number } | null>(null);
   const [sellerPhone, setSellerPhone] = useState('');
+  const [meetTime, setMeetTime] = useState('');
+  const [notes, setNotes] = useState('');
+  const [emailInput, setEmailInput] = useState('');
   const [locBusy, setLocBusy] = useState(false);
+
+  // Prefill the contact email from the signed-in account once it loads.
+  useEffect(() => {
+    if (email) setEmailInput((cur) => cur || email);
+  }, [email]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [warn, setWarn] = useState<string | null>(null);
@@ -113,6 +121,10 @@ export default function SellPage() {
           meetLat: meetCoords?.lat,
           meetLng: meetCoords?.lng,
           sellerPhone: sellerPhone.trim() || undefined,
+          sellerEmail: emailInput.trim() || email || undefined,
+          meetTime: meetTime.trim() || undefined,
+          notes: notes.trim() || undefined,
+          sellerAddress: address,
         });
       } catch {
         setWarn('Listing created, but the photo/description failed to save (backend offline?).');
@@ -157,6 +169,9 @@ export default function SellPage() {
         </SuccessNote>
         <Link href={`/buy/${listingId.toString()}`} className="btn-primary">
           Preview the buyer's view
+        </Link>
+        <Link href="/my-listings" className="btn-secondary">
+          Manage my listings
         </Link>
         <button
           className="btn-secondary"
@@ -307,6 +322,47 @@ export default function SellPage() {
           <p className="mt-1 text-xs text-zinc-500">
             Recommended — so the buyer can reach you if the meeting spot changes.
           </p>
+        </div>
+
+        {/* Meeting time */}
+        <div>
+          <label className="label" htmlFor="meettime">Proposed meeting time</label>
+          <input
+            id="meettime"
+            className="input"
+            value={meetTime}
+            onChange={(e) => setMeetTime(e.target.value)}
+            placeholder="e.g. Sat 3:00 PM — or “evenings this week”"
+          />
+        </div>
+
+        {/* Email */}
+        <div>
+          <label className="label" htmlFor="email">
+            Email <span className="text-zinc-500">(shared with the buyer)</span>
+          </label>
+          <input
+            id="email"
+            type="email"
+            className="input"
+            value={emailInput}
+            onChange={(e) => setEmailInput(e.target.value)}
+            placeholder="you@example.com"
+          />
+        </div>
+
+        {/* Notes */}
+        <div>
+          <label className="label" htmlFor="notes">
+            Notes for the buyer <span className="text-zinc-500">(optional)</span>
+          </label>
+          <textarea
+            id="notes"
+            className="input min-h-[72px] resize-y"
+            value={notes}
+            onChange={(e) => setNotes(e.target.value)}
+            placeholder="e.g. “Text when you arrive and I’ll come down. Park in the back.”"
+          />
         </div>
 
         {/* Summary */}

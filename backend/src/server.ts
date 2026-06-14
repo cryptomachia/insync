@@ -16,6 +16,7 @@ async function main(): Promise<void> {
       rpcUrl: cfg.rpcUrl,
       escrowAddress: cfg.escrowAddress,
       db,
+      fromBlock: cfg.indexerFromBlock,
     });
     // Don't crash the API if the chain is unreachable; log and keep serving.
     indexer.start().catch((err) => {

@@ -24,16 +24,47 @@ export type ListingMeta = {
   meetLat?: number | null;
   meetLng?: number | null;
   sellerPhone?: string | null;
+  sellerEmail?: string | null;
+  meetTime?: string | null;
+  notes?: string | null;
+  sellerAddress?: string | null;
+  archived?: boolean;
 };
 
 export type PartyCoordination = {
   lat: number | null;
   lng: number | null;
   phone: string | null;
+  email: string | null;
+  note: string | null;
   updatedAt: number;
 } | null;
 
-export type Coordination = { buyer: PartyCoordination; seller: PartyCoordination };
+export type Coordination = {
+  buyer: PartyCoordination;
+  seller: PartyCoordination;
+  listingId?: string | null;
+};
+
+export type SellerListing = {
+  listingId: string;
+  title: string | null;
+  image: string | null;
+  meetAddress: string | null;
+  archived?: boolean;
+};
+
+/** All listings created by a seller address (for "My listings"). */
+export async function getMyListings(address: string): Promise<SellerListing[]> {
+  try {
+    const res = await fetch(`${BACKEND_URL}/sellers/${address}/listings`, { cache: 'no-store' });
+    if (!res.ok) return [];
+    const data = await res.json();
+    return (data?.listings ?? []) as SellerListing[];
+  } catch {
+    return [];
+  }
+}
 
 /** Read both parties' live location/phone for a deal. */
 export async function getCoordination(dealId: bigint | string): Promise<Coordination> {
@@ -50,7 +81,7 @@ export async function getCoordination(dealId: bigint | string): Promise<Coordina
 export async function shareCoordination(
   dealId: bigint | string,
   role: 'buyer' | 'seller',
-  data: { lat?: number; lng?: number; phone?: string },
+  data: { lat?: number; lng?: number; phone?: string; email?: string; note?: string; listingId?: string },
 ): Promise<void> {
   await fetch(`${BACKEND_URL}/deals/${dealId}/coordination`, {
     method: 'POST',

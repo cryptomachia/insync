@@ -74,6 +74,11 @@ export interface ListingMetaRow {
   meet_lat: number | null;
   meet_lng: number | null;
   seller_phone: string | null;
+  seller_email: string | null;
+  meet_time: string | null;
+  notes: string | null;
+  seller_address: string | null;
+  archived: number | null;
 }
 
 export interface CoordinationRow {
@@ -81,7 +86,18 @@ export interface CoordinationRow {
   lat: number | null;
   lng: number | null;
   phone: string | null;
+  email: string | null;
+  note: string | null;
+  listing_id: string | null;
   updated_at: number;
+}
+
+export interface SellerListingRow {
+  listing_id: string;
+  title: string | null;
+  image: string | null;
+  meet_address: string | null;
+  archived: number | null;
 }
 
 export interface HandoffDb {
@@ -97,6 +113,7 @@ export interface HandoffDb {
   }): void;
   setListingActive(listingId: bigint, active: boolean): void;
   getListings(): ListingRow[];
+  getListing(listingId: bigint): ListingRow | undefined;
   upsertDealFromFunded(d: {
     dealId: bigint;
     listingId: bigint;
@@ -127,13 +144,19 @@ export interface HandoffDb {
       meetLat?: number;
       meetLng?: number;
       sellerPhone?: string;
+      sellerEmail?: string;
+      meetTime?: string;
+      notes?: string;
+      sellerAddress?: string;
+      archived?: boolean;
     },
   ): void;
   getListingMeta(listingId: bigint): ListingMetaRow | undefined;
+  getSellerListings(sellerAddress: string): SellerListingRow[];
   upsertCoordination(
     dealId: bigint,
     role: 'buyer' | 'seller',
-    c: { lat?: number; lng?: number; phone?: string },
+    c: { lat?: number; lng?: number; phone?: string; email?: string; note?: string; listingId?: string },
   ): void;
   getCoordination(dealId: bigint): CoordinationRow[];
   getCursor(): bigint;
@@ -223,10 +246,24 @@ export function openDb(path: string): HandoffDb {
   raw.pragma('journal_mode = WAL');
   raw.exec(SCHEMA);
 
-  // Migrate older DBs that predate the meetup columns (no-op when they already exist).
-  for (const col of ['meet_address TEXT', 'meet_lat REAL', 'meet_lng REAL', 'seller_phone TEXT']) {
+  // Migrate older DBs to all extra columns (no-op when they already exist).
+  const migrations: Array<[string, string]> = [
+    ['listing_meta', 'meet_address TEXT'],
+    ['listing_meta', 'meet_lat REAL'],
+    ['listing_meta', 'meet_lng REAL'],
+    ['listing_meta', 'seller_phone TEXT'],
+    ['listing_meta', 'seller_email TEXT'],
+    ['listing_meta', 'meet_time TEXT'],
+    ['listing_meta', 'notes TEXT'],
+    ['listing_meta', 'seller_address TEXT'],
+    ['listing_meta', 'archived INTEGER DEFAULT 0'],
+    ['deal_coordination', 'email TEXT'],
+    ['deal_coordination', 'note TEXT'],
+    ['deal_coordination', 'listing_id TEXT'],
+  ];
+  for (const [table, col] of migrations) {
     try {
-      raw.exec(`ALTER TABLE listing_meta ADD COLUMN ${col}`);
+      raw.exec(`ALTER TABLE ${table} ADD COLUMN ${col}`);
     } catch {
       /* column already exists */
     }
@@ -248,6 +285,7 @@ export function openDb(path: string): HandoffDb {
     `UPDATE listings SET active=@active, updated_at=@updated_at WHERE listing_id=@listing_id`,
   );
   const getListingsStmt = raw.prepare(`SELECT * FROM listings ORDER BY CAST(listing_id AS INTEGER)`);
+  const getListingStmt = raw.prepare(`SELECT * FROM listings WHERE listing_id=?`);
 
   const upsertDealStmt = raw.prepare(`
     INSERT INTO deals (deal_id, listing_id, buyer, seller, pay_token, token_amount,
@@ -284,8 +322,8 @@ export function openDb(path: string): HandoffDb {
   );
 
   const upsertMetaStmt = raw.prepare(`
-    INSERT INTO listing_meta (listing_id, title, description, image, meet_address, meet_lat, meet_lng, seller_phone, updated_at)
-    VALUES (@listing_id, @title, @description, @image, @meet_address, @meet_lat, @meet_lng, @seller_phone, @updated_at)
+    INSERT INTO listing_meta (listing_id, title, description, image, meet_address, meet_lat, meet_lng, seller_phone, seller_email, meet_time, notes, seller_address, archived, updated_at)
+    VALUES (@listing_id, @title, @description, @image, @meet_address, @meet_lat, @meet_lng, @seller_phone, @seller_email, @meet_time, @notes, @seller_address, @archived, @updated_at)
     ON CONFLICT(listing_id) DO UPDATE SET
       title=COALESCE(excluded.title, listing_meta.title),
       description=COALESCE(excluded.description, listing_meta.description),
@@ -294,23 +332,34 @@ export function openDb(path: string): HandoffDb {
       meet_lat=COALESCE(excluded.meet_lat, listing_meta.meet_lat),
       meet_lng=COALESCE(excluded.meet_lng, listing_meta.meet_lng),
       seller_phone=COALESCE(excluded.seller_phone, listing_meta.seller_phone),
+      seller_email=COALESCE(excluded.seller_email, listing_meta.seller_email),
+      meet_time=COALESCE(excluded.meet_time, listing_meta.meet_time),
+      notes=COALESCE(excluded.notes, listing_meta.notes),
+      seller_address=COALESCE(excluded.seller_address, listing_meta.seller_address),
+      archived=COALESCE(excluded.archived, listing_meta.archived),
       updated_at=excluded.updated_at
   `);
   const getMetaStmt = raw.prepare(
-    `SELECT title, description, image, meet_address, meet_lat, meet_lng, seller_phone FROM listing_meta WHERE listing_id=?`,
+    `SELECT title, description, image, meet_address, meet_lat, meet_lng, seller_phone, seller_email, meet_time, notes, seller_address, archived FROM listing_meta WHERE listing_id=?`,
+  );
+  const getSellerListingsStmt = raw.prepare(
+    `SELECT listing_id, title, image, meet_address, archived FROM listing_meta WHERE seller_address=? ORDER BY CAST(listing_id AS INTEGER) DESC`,
   );
 
   const upsertCoordStmt = raw.prepare(`
-    INSERT INTO deal_coordination (deal_id, role, lat, lng, phone, updated_at)
-    VALUES (@deal_id, @role, @lat, @lng, @phone, @updated_at)
+    INSERT INTO deal_coordination (deal_id, role, lat, lng, phone, email, note, listing_id, updated_at)
+    VALUES (@deal_id, @role, @lat, @lng, @phone, @email, @note, @listing_id, @updated_at)
     ON CONFLICT(deal_id, role) DO UPDATE SET
       lat=COALESCE(excluded.lat, deal_coordination.lat),
       lng=COALESCE(excluded.lng, deal_coordination.lng),
       phone=COALESCE(excluded.phone, deal_coordination.phone),
+      email=COALESCE(excluded.email, deal_coordination.email),
+      note=COALESCE(excluded.note, deal_coordination.note),
+      listing_id=COALESCE(excluded.listing_id, deal_coordination.listing_id),
       updated_at=excluded.updated_at
   `);
   const getCoordStmt = raw.prepare(
-    `SELECT role, lat, lng, phone, updated_at FROM deal_coordination WHERE deal_id=?`,
+    `SELECT role, lat, lng, phone, email, note, listing_id, updated_at FROM deal_coordination WHERE deal_id=?`,
   );
 
   const getCursorStmt = raw.prepare(`SELECT last_block FROM indexer_state WHERE id=1`);
@@ -345,6 +394,10 @@ export function openDb(path: string): HandoffDb {
 
     getListings() {
       return getListingsStmt.all() as ListingRow[];
+    },
+
+    getListing(listingId) {
+      return getListingStmt.get(listingId.toString()) as ListingRow | undefined;
     },
 
     upsertDealFromFunded(d) {
@@ -427,12 +480,21 @@ export function openDb(path: string): HandoffDb {
         meet_lat: meta.meetLat ?? null,
         meet_lng: meta.meetLng ?? null,
         seller_phone: meta.sellerPhone ?? null,
+        seller_email: meta.sellerEmail ?? null,
+        meet_time: meta.meetTime ?? null,
+        notes: meta.notes ?? null,
+        seller_address: meta.sellerAddress ? meta.sellerAddress.toLowerCase() : null,
+        archived: meta.archived === undefined ? null : meta.archived ? 1 : 0,
         updated_at: now(),
       });
     },
 
     getListingMeta(listingId) {
       return getMetaStmt.get(listingId.toString()) as ListingMetaRow | undefined;
+    },
+
+    getSellerListings(sellerAddress) {
+      return getSellerListingsStmt.all(sellerAddress.toLowerCase()) as SellerListingRow[];
     },
 
     upsertCoordination(dealId, role, c) {
@@ -442,6 +504,9 @@ export function openDb(path: string): HandoffDb {
         lat: c.lat ?? null,
         lng: c.lng ?? null,
         phone: c.phone ?? null,
+        email: c.email ?? null,
+        note: c.note ?? null,
+        listing_id: c.listingId ?? null,
         updated_at: now(),
       });
     },

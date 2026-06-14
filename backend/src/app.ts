@@ -151,6 +151,11 @@ export async function buildApp(opts: BuildAppOptions): Promise<FastifyInstance> 
           meetLat: m.meet_lat,
           meetLng: m.meet_lng,
           sellerPhone: m.seller_phone,
+          sellerEmail: m.seller_email,
+          meetTime: m.meet_time,
+          notes: m.notes,
+          sellerAddress: m.seller_address,
+          archived: m.archived === 1,
         }
       : null;
 
@@ -171,6 +176,11 @@ export async function buildApp(opts: BuildAppOptions): Promise<FastifyInstance> 
       meetLat?: number;
       meetLng?: number;
       sellerPhone?: string;
+      sellerEmail?: string;
+      meetTime?: string;
+      notes?: string;
+      sellerAddress?: string;
+      archived?: boolean;
     };
   }>('/listings/:id/meta', async (req, reply) => {
     if (!/^\d{1,78}$/.test(req.params.id)) {
@@ -184,6 +194,15 @@ export async function buildApp(opts: BuildAppOptions): Promise<FastifyInstance> 
       typeof b.meetAddress === 'string' ? b.meetAddress.slice(0, MAX_ADDR) : undefined;
     const sellerPhone =
       typeof b.sellerPhone === 'string' ? b.sellerPhone.slice(0, 32) : undefined;
+    const sellerEmail =
+      typeof b.sellerEmail === 'string' ? b.sellerEmail.slice(0, 120) : undefined;
+    const meetTime = typeof b.meetTime === 'string' ? b.meetTime.slice(0, 80) : undefined;
+    const notes = typeof b.notes === 'string' ? b.notes.slice(0, 1000) : undefined;
+    const sellerAddress =
+      typeof b.sellerAddress === 'string' && /^0x[0-9a-fA-F]{40}$/.test(b.sellerAddress)
+        ? b.sellerAddress
+        : undefined;
+    const archived = typeof b.archived === 'boolean' ? b.archived : undefined;
     const meetLat =
       typeof b.meetLat === 'number' && Math.abs(b.meetLat) <= 90 ? b.meetLat : undefined;
     const meetLng =
@@ -206,8 +225,29 @@ export async function buildApp(opts: BuildAppOptions): Promise<FastifyInstance> 
       meetLat,
       meetLng,
       sellerPhone,
+      sellerEmail,
+      meetTime,
+      notes,
+      sellerAddress,
+      archived,
     });
     return reply.code(201).send({ ok: true });
+  });
+
+  // Listings created by a given seller (for the "My listings" view).
+  app.get<{ Params: { address: string } }>('/sellers/:address/listings', async (req, reply) => {
+    if (!/^0x[0-9a-fA-F]{40}$/.test(req.params.address)) {
+      return reply.code(400).send({ error: 'invalid address' });
+    }
+    return {
+      listings: db.getSellerListings(req.params.address).map((r) => ({
+        listingId: r.listing_id,
+        title: r.title,
+        image: r.image,
+        meetAddress: r.meet_address,
+        archived: r.archived === 1,
+      })),
+    };
   });
 
   // ---- Live meetup coordination per deal (each party shares location/phone) ----
@@ -218,14 +258,25 @@ export async function buildApp(opts: BuildAppOptions): Promise<FastifyInstance> 
     const rows = db.getCoordination(BigInt(req.params.id));
     const by = (role: 'buyer' | 'seller') => {
       const r = rows.find((x) => x.role === role);
-      return r ? { lat: r.lat, lng: r.lng, phone: r.phone, updatedAt: r.updated_at } : null;
+      return r
+        ? { lat: r.lat, lng: r.lng, phone: r.phone, email: r.email, note: r.note, updatedAt: r.updated_at }
+        : null;
     };
-    return { buyer: by('buyer'), seller: by('seller') };
+    const listingId = rows.find((r) => r.listing_id)?.listing_id ?? null;
+    return { buyer: by('buyer'), seller: by('seller'), listingId };
   });
 
   app.post<{
     Params: { id: string };
-    Body: { role?: string; lat?: number; lng?: number; phone?: string };
+    Body: {
+      role?: string;
+      lat?: number;
+      lng?: number;
+      phone?: string;
+      email?: string;
+      note?: string;
+      listingId?: string;
+    };
   }>('/deals/:id/coordination', async (req, reply) => {
     if (!/^\d{1,78}$/.test(req.params.id)) {
       return reply.code(400).send({ error: 'invalid deal id' });
@@ -237,7 +288,11 @@ export async function buildApp(opts: BuildAppOptions): Promise<FastifyInstance> 
     const lat = typeof b.lat === 'number' && Math.abs(b.lat) <= 90 ? b.lat : undefined;
     const lng = typeof b.lng === 'number' && Math.abs(b.lng) <= 180 ? b.lng : undefined;
     const phone = typeof b.phone === 'string' ? b.phone.slice(0, 32) : undefined;
-    db.upsertCoordination(BigInt(req.params.id), b.role, { lat, lng, phone });
+    const email = typeof b.email === 'string' ? b.email.slice(0, 120) : undefined;
+    const note = typeof b.note === 'string' ? b.note.slice(0, 500) : undefined;
+    const listingId =
+      typeof b.listingId === 'string' && /^\d{1,78}$/.test(b.listingId) ? b.listingId : undefined;
+    db.upsertCoordination(BigInt(req.params.id), b.role, { lat, lng, phone, email, note, listingId });
     return reply.code(201).send({ ok: true });
   });
 
