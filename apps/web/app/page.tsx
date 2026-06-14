@@ -1,63 +1,66 @@
 import Link from 'next/link';
 
+const steps = [
+  'The seller posts an item — a photo, a price, a short description.',
+  'The buyer locks the full payment in advance. The seller can see the money is real and waiting, so nobody wastes a trip.',
+  'They meet in person. The buyer looks at the item and taps once to release payment.',
+  'The seller is paid instantly and for keeps — no cash to carry, no bank, no reversals.',
+];
+
 export default function Home() {
   return (
-    <div className="space-y-6">
+    <div className="space-y-7">
       <section className="space-y-3">
-        <h1 className="text-2xl font-bold leading-tight">
-          Buy from strangers, safely.
-        </h1>
-        <p className="text-slate-600">
-          The seller sees your funds <b>locked before they travel</b>. At the meet,
-          you scan their QR to release payment. Final settlement — no chargebacks,
-          no flaking.
+        <h1 className="text-3xl font-bold leading-tight">Buy from strangers, safely.</h1>
+        <p className="text-zinc-400">
+          The payment is locked up front and only released when you meet in person and the
+          buyer is happy. No cash changing hands, no bank, no chargebacks — just a clean,
+          final handoff.
         </p>
       </section>
 
       <div className="grid gap-3">
-        <Link href="/sell" className="card flex items-center justify-between hover:bg-slate-50">
-          <div>
-            <div className="font-semibold">Sell an item</div>
-            <div className="text-sm text-slate-500">
-              Create a listing with a deposit policy.
-            </div>
-          </div>
-          <span className="text-xl">→</span>
-        </Link>
-
-        <Link href="/buy" className="card flex items-center justify-between hover:bg-slate-50">
-          <div>
-            <div className="font-semibold">Buy an item</div>
-            <div className="text-sm text-slate-500">
-              Open a listing, lock funds, then meet.
-            </div>
-          </div>
-          <span className="text-xl">→</span>
-        </Link>
-
-        <Link href="/my-deals" className="card flex items-center justify-between hover:bg-slate-50">
-          <div>
-            <div className="font-semibold">My deals</div>
-            <div className="text-sm text-slate-500">
-              Track everything you're buying and selling.
-            </div>
-          </div>
-          <span className="text-xl">→</span>
-        </Link>
+        <HomeLink href="/sell" title="Sell an item" sub="Post a photo, set a price, get a link to share." />
+        <HomeLink href="/buy" title="Buy an item" sub="Open a seller's link, lock your payment, then meet." />
+        <HomeLink href="/my-deals" title="My deals" sub="Track everything you're buying and selling." />
       </div>
 
-      <section className="card space-y-2 bg-slate-900 text-slate-100">
-        <div className="text-sm font-semibold uppercase tracking-wide text-slate-400">
+      <section className="card space-y-4">
+        <div className="text-xs font-semibold uppercase tracking-wider text-indigo-300">
           How it works
         </div>
-        <ol className="list-decimal space-y-1 pl-5 text-sm text-slate-200">
-          <li>Seller lists an item with a small earnest-money deposit.</li>
-          <li>Buyer one-tap locks price + deposit on-chain.</li>
-          <li>Seller sees “funds committed” and agrees to meet.</li>
-          <li>At the meet: seller checks in &amp; shows a QR; buyer scans to release.</li>
-          <li>Seller gets paid; deposit returns to the buyer. Done.</li>
+        <ol className="space-y-3">
+          {steps.map((s, i) => (
+            <li key={i} className="flex gap-3 text-sm text-zinc-300">
+              <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-indigo-500/15 text-xs font-bold text-indigo-300">
+                {i + 1}
+              </span>
+              <span>{s}</span>
+            </li>
+          ))}
         </ol>
+        <p className="rounded-xl border border-white/10 bg-white/[0.03] p-3 text-xs text-zinc-400">
+          To keep both sides honest, the buyer also puts down a small{' '}
+          <span className="font-semibold text-zinc-200">refundable deposit</span>. They get it
+          back the moment the deal completes — they only lose it if they back out after the
+          seller has already shown up to meet.
+        </p>
       </section>
     </div>
+  );
+}
+
+function HomeLink({ href, title, sub }: { href: string; title: string; sub: string }) {
+  return (
+    <Link
+      href={href}
+      className="card flex items-center justify-between transition hover:border-white/20 hover:bg-zinc-900"
+    >
+      <div>
+        <div className="font-semibold">{title}</div>
+        <div className="text-sm text-zinc-400">{sub}</div>
+      </div>
+      <span className="text-xl text-zinc-500">→</span>
+    </Link>
   );
 }

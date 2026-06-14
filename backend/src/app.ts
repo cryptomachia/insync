@@ -58,8 +58,8 @@ export async function buildApp(opts: BuildAppOptions): Promise<FastifyInstance> 
   const { db } = opts;
   const app = Fastify({
     logger: opts.logger ?? false,
-    // Cap request bodies (only /notify accepts one). Default is 1 MiB; tighten it.
-    bodyLimit: 16 * 1024,
+    // Listing photos (base64 data URLs) post to /listings/:id/meta, so allow a few MiB.
+    bodyLimit: 3 * 1024 * 1024,
   });
   // CORS intentionally open for the demo (SPEC §11) but credentials disabled, so a
   // reflected origin can't be combined with cookies/Authorization against a session.
@@ -134,6 +134,43 @@ export async function buildApp(opts: BuildAppOptions): Promise<FastifyInstance> 
       return reply.code(201).send({ ok: true, notification: row });
     },
   );
+
+  // ---- Off-chain listing details (item name, description, photo) ----
+  const MAX_TITLE = 140;
+  const MAX_DESC = 2000;
+  const MAX_IMAGE = 2 * 1024 * 1024; // ~2 MiB base64 data URL
+
+  app.get<{ Params: { id: string } }>('/listings/:id/meta', async (req, reply) => {
+    if (!/^\d{1,78}$/.test(req.params.id)) {
+      return reply.code(400).send({ error: 'invalid listing id' });
+    }
+    return { meta: db.getListingMeta(BigInt(req.params.id)) ?? null };
+  });
+
+  app.post<{
+    Params: { id: string };
+    Body: { title?: string; description?: string; image?: string };
+  }>('/listings/:id/meta', async (req, reply) => {
+    if (!/^\d{1,78}$/.test(req.params.id)) {
+      return reply.code(400).send({ error: 'invalid listing id' });
+    }
+    const b = req.body ?? {};
+    const title = typeof b.title === 'string' ? b.title.slice(0, MAX_TITLE) : undefined;
+    const description =
+      typeof b.description === 'string' ? b.description.slice(0, MAX_DESC) : undefined;
+    let image: string | undefined;
+    if (b.image != null && b.image !== '') {
+      if (typeof b.image !== 'string' || b.image.length > MAX_IMAGE) {
+        return reply.code(400).send({ error: 'image too large or invalid (max ~2MB)' });
+      }
+      if (!/^data:image\//.test(b.image)) {
+        return reply.code(400).send({ error: 'image must be a data:image/... URL' });
+      }
+      image = b.image;
+    }
+    db.upsertListingMeta(BigInt(req.params.id), { title, description, image });
+    return reply.code(201).send({ ok: true });
+  });
 
   return app;
 }

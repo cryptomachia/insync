@@ -14,6 +14,35 @@ export type BackendDeal = {
   sellerCheckedIn?: boolean;
 };
 
+// Off-chain listing metadata (item name, description, photo) keyed by on-chain listingId.
+// The contract only stores price/deposit/token/seller; the human details live here.
+export type ListingMeta = { title?: string; description?: string; image?: string };
+
+export async function saveListingMeta(
+  listingId: bigint | string,
+  meta: ListingMeta,
+): Promise<void> {
+  const res = await fetch(`${BACKEND_URL}/listings/${listingId}/meta`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(meta),
+  });
+  if (!res.ok) throw new Error(`Backend ${res.status}: could not save listing details`);
+}
+
+export async function getListingMeta(
+  listingId: bigint | string,
+): Promise<ListingMeta | null> {
+  try {
+    const res = await fetch(`${BACKEND_URL}/listings/${listingId}/meta`, { cache: 'no-store' });
+    if (!res.ok) return null;
+    const data = await res.json();
+    return (data?.meta ?? data ?? null) as ListingMeta | null;
+  } catch {
+    return null;
+  }
+}
+
 export async function fetchMyDeals(user: string): Promise<BackendDeal[]> {
   const res = await fetch(
     `${BACKEND_URL}/deals?user=${encodeURIComponent(user)}`,

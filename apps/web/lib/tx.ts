@@ -2,6 +2,7 @@
 // Funding goes through @handoff/funding (FundButton/useFunding); these cover the rest of the
 // lifecycle: list / checkIn / confirmReceipt / agreeCancel / buyerCancel. (SPEC §3, §10)
 import type { WalletClient } from 'viem';
+import { baseSepolia } from 'viem/chains';
 import { escrowAbi, getAddresses } from '@handoff/contracts-abi';
 import { getReport } from '@handoff/datastreams';
 import { publicClient, chain } from './chain';
@@ -18,6 +19,30 @@ function requireAccount(wc: WalletClient) {
   return wc.account;
 }
 
+// Wallets (especially injected ones) can be on the wrong network. Make sure we're on the
+// app's chain before signing — switch to it, adding it to the wallet if it's unknown.
+async function ensureChain(wc: WalletClient) {
+  let current: number | undefined;
+  try {
+    current = await wc.getChainId();
+  } catch {
+    /* ignore — try to switch anyway */
+  }
+  if (current === chain.id) return;
+  try {
+    await wc.switchChain({ id: chain.id });
+  } catch {
+    try {
+      await wc.addChain({ chain: chain.id === baseSepolia.id ? baseSepolia : chain });
+      await wc.switchChain({ id: chain.id });
+    } catch {
+      throw new Error(
+        `Please switch your wallet to ${chain.name ?? 'the right network'} (chain ${chain.id}) and try again.`,
+      );
+    }
+  }
+}
+
 async function send(wc: WalletClient, fn: () => Promise<`0x${string}`>) {
   const hash = await fn();
   await publicClient().waitForTransactionReceipt({ hash });
@@ -30,6 +55,7 @@ export async function listItem(
   args: { priceUsd1e8: bigint; depositBps: number; payToken: `0x${string}` },
 ): Promise<bigint> {
   const account = requireAccount(wc);
+  await ensureChain(wc);
   const hash = await wc.writeContract({
     address: escrowAddr(),
     abi: escrowAbi,
@@ -61,6 +87,7 @@ export async function listItem(
 /** Seller checks in at the meet (gates forfeiture). */
 export async function checkIn(wc: WalletClient, dealId: bigint) {
   const account = requireAccount(wc);
+  await ensureChain(wc);
   return send(wc, () =>
     wc.writeContract({
       address: escrowAddr(),
@@ -83,6 +110,7 @@ export async function confirmReceipt(
   payToken: `0x${string}`,
 ) {
   const account = requireAccount(wc);
+  await ensureChain(wc);
   const report = await reportFor(payToken);
   return send(wc, () =>
     wc.writeContract({
@@ -99,6 +127,7 @@ export async function confirmReceipt(
 /** Seller co-signs a cancel -> full refund to buyer. */
 export async function agreeCancel(wc: WalletClient, dealId: bigint) {
   const account = requireAccount(wc);
+  await ensureChain(wc);
   return send(wc, () =>
     wc.writeContract({
       address: escrowAddr(),
@@ -118,6 +147,7 @@ export async function buyerCancel(
   payToken: `0x${string}`,
 ) {
   const account = requireAccount(wc);
+  await ensureChain(wc);
   const report = await reportFor(payToken);
   return send(wc, () =>
     wc.writeContract({

@@ -23,6 +23,7 @@ import {
   type Address,
   type WalletClient,
 } from 'viem';
+import { baseSepolia } from 'viem/chains';
 import { escrowAbi, getAddresses, IS_MOCK } from '@handoff/contracts-abi';
 
 export type FundArgs = {
@@ -37,6 +38,7 @@ export type FundArgs = {
 const erc20Abi = parseAbi([
   'function allowance(address owner, address spender) view returns (uint256)',
   'function approve(address spender, uint256 amount) returns (bool)',
+  'function balanceOf(address owner) view returns (uint256)',
   'function decimals() view returns (uint8)',
 ]);
 
@@ -54,6 +56,11 @@ const BLINK_SIGNER_PATH = norm(process.env.NEXT_PUBLIC_BLINK_SIGNER_PATH) ?? '/a
 const CHAIN_ID = Number(
   norm(process.env.NEXT_PUBLIC_CHAIN_ID) ?? norm(process.env.CHAIN_ID) ?? '31337',
 );
+
+// viem refuses to send if the tx's `chain` differs from the wallet's active chain. The
+// Dynamic wallet client reports a STALE `.chain` (mainnet) even after switching networks,
+// so pass the real target chain explicitly. (undefined on anvil/local is fine — no guard.)
+const targetChain = CHAIN_ID === baseSepolia.id ? baseSepolia : undefined;
 
 // Live Blink only when not mocking AND a merchantId is configured. Otherwise we run the
 // pure on-chain approve+fund path (works with no Blink account).
@@ -119,7 +126,7 @@ async function ensureAllowance(args: {
     functionName: 'approve',
     args: [spender, amount],
     account: walletClient.account!,
-    chain: walletClient.chain,
+    chain: targetChain,
   });
   await pub.waitForTransactionReceipt({ hash });
 }
@@ -131,6 +138,30 @@ export function useFunding() {
     const { walletClient } = args;
     if (!walletClient.account) throw new Error('wallet not connected');
     const account = walletClient.account;
+
+    // Ensure the wallet is on the app's chain before signing (injected wallets may differ).
+    try {
+      if ((await walletClient.getChainId()) !== CHAIN_ID) {
+        await walletClient.switchChain({ id: CHAIN_ID });
+      }
+    } catch {
+      try {
+        await walletClient.addChain({
+          chain:
+            CHAIN_ID === baseSepolia.id
+              ? baseSepolia
+              : ({
+                  id: CHAIN_ID,
+                  name: `chain-${CHAIN_ID}`,
+                  nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
+                  rpcUrls: { default: { http: [RPC] } },
+                } as never),
+        });
+        await walletClient.switchChain({ id: CHAIN_ID });
+      } catch {
+        throw new Error(`Switch your wallet to chain ${CHAIN_ID} (Base Sepolia) and try again.`);
+      }
+    }
 
     const pub = createPublicClient({ transport: http(RPC) });
 
@@ -145,14 +176,22 @@ export function useFunding() {
     const active = listing[4];
     if (!active) throw new Error('listing is not active');
 
-    // 2. LIVE: pull USDC into the buyer's wallet in one tap before funding.
-    //    (MOCK skips this — anvil accounts already hold the MockERC20 balance.)
+    // 2. LIVE: only pull funds via Blink if the wallet doesn't already hold enough of the
+    //    pay token. A wallet that's already funded skips straight to approve+fund.
     if (USE_BLINK) {
-      await blinkPullDeposit({
-        address: account.address,
-        token: payToken,
-        tokenAmount: args.tokenAmount,
-      });
+      const balance = (await pub.readContract({
+        address: payToken,
+        abi: erc20Abi,
+        functionName: 'balanceOf',
+        args: [account.address],
+      })) as bigint;
+      if (balance < args.tokenAmount) {
+        await blinkPullDeposit({
+          address: account.address,
+          token: payToken,
+          tokenAmount: args.tokenAmount,
+        });
+      }
     }
 
     // 3. Ensure ERC20 allowance, then fund.
@@ -171,7 +210,7 @@ export function useFunding() {
       functionName: 'fund',
       args: [args.listingId, args.tokenAmount, args.freeCancelUntil, args.expiry],
       account,
-      chain: walletClient.chain,
+      chain: targetChain,
     });
     const receipt = await pub.waitForTransactionReceipt({ hash });
 

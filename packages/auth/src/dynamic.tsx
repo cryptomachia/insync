@@ -14,6 +14,28 @@ import type { AuthState } from './types';
 // the browser bundle. A `globalThis.process.env[...]` indirection is NOT statically
 // replaced, so it reads undefined client-side and Dynamic mounts with no environmentId.
 const ENV_ID = process.env.NEXT_PUBLIC_DYNAMIC_ENV_ID ?? '';
+const CHAIN_ID = Number(process.env.NEXT_PUBLIC_CHAIN_ID ?? '84532');
+const RPC_URL = process.env.NEXT_PUBLIC_RPC_URL ?? 'https://base-sepolia-rpc.publicnode.com';
+
+// Dynamic only allows chains explicitly listed in its "supportedNetworks". The app runs on
+// Base Sepolia, which isn't a Dynamic default — register it so requests to 84532 are allowed.
+const baseSepoliaNetwork = {
+  blockExplorerUrls: ['https://sepolia.basescan.org'],
+  chainId: CHAIN_ID,
+  chainName: 'Base Sepolia',
+  iconUrls: ['https://app.dynamic.xyz/assets/networks/base.svg'],
+  name: 'Base Sepolia',
+  nativeCurrency: { decimals: 18, name: 'Ether', symbol: 'ETH' },
+  networkId: CHAIN_ID,
+  rpcUrls: [RPC_URL],
+  vanityName: 'Base Sepolia',
+};
+
+// Append (don't replace) the dashboard networks, adding Base Sepolia if it's missing.
+function evmNetworks(dashboard: Array<{ chainId?: number | string }> = []) {
+  if (dashboard.some((n) => Number(n.chainId) === CHAIN_ID)) return dashboard;
+  return [...dashboard, baseSepoliaNetwork];
+}
 
 export function DynamicAuthProvider({ children }: { children: React.ReactNode }) {
   return (
@@ -21,6 +43,7 @@ export function DynamicAuthProvider({ children }: { children: React.ReactNode })
       settings={{
         environmentId: ENV_ID,
         walletConnectors: [EthereumWalletConnectors],
+        overrides: { evmNetworks: evmNetworks as never },
       }}
     >
       {children}

@@ -3,37 +3,52 @@
 @tailwind utilities;
 
 :root {
-  color-scheme: light;
+  color-scheme: dark;
 }
 
 body {
-  @apply bg-slate-50 text-slate-900 antialiased;
+  @apply bg-zinc-950 text-zinc-100 antialiased;
+  background-image: radial-gradient(55rem 55rem at 50% -15%, rgba(99, 102, 241, 0.14), transparent 60%);
+  background-attachment: fixed;
+  min-height: 100dvh;
 }
 
-/* Reusable component classes for a clean, demo-ready, mobile-first UI. */
+/* Reusable component classes — professional dark theme, mobile-first. */
 @layer components {
   .btn {
     @apply inline-flex w-full items-center justify-center rounded-xl px-4 py-3 text-base font-semibold transition active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-50;
   }
   .btn-primary {
-    @apply btn bg-brand text-white hover:bg-brand-dark;
+    @apply btn bg-indigo-500 text-white shadow-lg shadow-indigo-500/25 hover:bg-indigo-400;
   }
   .btn-secondary {
-    @apply btn border border-slate-300 bg-white text-slate-800 hover:bg-slate-100;
+    @apply btn border border-white/15 bg-white/5 text-zinc-100 hover:bg-white/10;
   }
   .btn-danger {
-    @apply btn border border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100;
+    @apply btn border border-rose-500/30 bg-rose-500/10 text-rose-300 hover:bg-rose-500/20;
   }
   .card {
-    @apply rounded-2xl border border-slate-200 bg-white p-5 shadow-sm;
+    @apply rounded-2xl border border-white/10 bg-zinc-900/70 p-5 shadow-xl shadow-black/30 backdrop-blur;
   }
   .label {
-    @apply mb-1 block text-sm font-medium text-slate-600;
+    @apply mb-1.5 block text-sm font-medium text-zinc-400;
   }
   .input {
-    @apply w-full rounded-xl border border-slate-300 px-4 py-3 text-base outline-none focus:border-brand focus:ring-2 focus:ring-brand/20;
+    @apply w-full rounded-xl border border-white/10 bg-zinc-950/60 px-4 py-3 text-base text-zinc-100 placeholder-zinc-500 outline-none transition focus:border-indigo-400 focus:ring-2 focus:ring-indigo-500/30;
   }
   .pill {
     @apply inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs font-semibold;
+  }
+  .surface {
+    @apply rounded-xl border border-white/10 bg-white/[0.03] p-3;
+  }
+  .choice {
+    @apply rounded-xl border px-3 py-3 text-center text-sm font-semibold transition;
+  }
+  .choice-on {
+    @apply border-indigo-400 bg-indigo-500/15 text-indigo-200;
+  }
+  .choice-off {
+    @apply border-white/10 bg-white/[0.03] text-zinc-300 hover:bg-white/[0.06];
   }
 }

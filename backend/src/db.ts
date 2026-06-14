@@ -99,6 +99,13 @@ export interface HandoffDb {
   getDeals(user?: string): DealRow[];
   insertNotification(n: { dealId: bigint; event: string; payload?: unknown }): NotificationRow;
   getNotifications(dealId?: bigint): NotificationRow[];
+  upsertListingMeta(
+    listingId: bigint,
+    meta: { title?: string; description?: string; image?: string },
+  ): void;
+  getListingMeta(
+    listingId: bigint,
+  ): { title: string | null; description: string | null; image: string | null } | undefined;
   getCursor(): bigint;
   setCursor(block: bigint): void;
   close(): void;
@@ -149,6 +156,16 @@ CREATE INDEX IF NOT EXISTS idx_notifications_deal ON notifications(deal_id);
 CREATE TABLE IF NOT EXISTS indexer_state (
   id           INTEGER PRIMARY KEY CHECK (id = 1),
   last_block   TEXT NOT NULL
+);
+
+-- Off-chain, human-facing listing details (item name, description, photo) keyed by
+-- the on-chain listingId. The contract stores none of this; the buyer's page joins it in.
+CREATE TABLE IF NOT EXISTS listing_meta (
+  listing_id  TEXT PRIMARY KEY,
+  title       TEXT,
+  description TEXT,
+  image       TEXT,
+  updated_at  INTEGER NOT NULL
 );
 `;
 
@@ -209,6 +226,16 @@ export function openDb(path: string): HandoffDb {
   );
   const getNotificationsByDealStmt = raw.prepare(
     `SELECT * FROM notifications WHERE deal_id=? ORDER BY id DESC`,
+  );
+
+  const upsertMetaStmt = raw.prepare(`
+    INSERT INTO listing_meta (listing_id, title, description, image, updated_at)
+    VALUES (@listing_id, @title, @description, @image, @updated_at)
+    ON CONFLICT(listing_id) DO UPDATE SET
+      title=excluded.title, description=excluded.description, image=excluded.image, updated_at=excluded.updated_at
+  `);
+  const getMetaStmt = raw.prepare(
+    `SELECT title, description, image FROM listing_meta WHERE listing_id=?`,
   );
 
   const getCursorStmt = raw.prepare(`SELECT last_block FROM indexer_state WHERE id=1`);
@@ -313,6 +340,22 @@ export function openDb(path: string): HandoffDb {
         return getNotificationsByDealStmt.all(dealId.toString()) as NotificationRow[];
       }
       return getNotificationsAllStmt.all() as NotificationRow[];
+    },
+
+    upsertListingMeta(listingId, meta) {
+      upsertMetaStmt.run({
+        listing_id: listingId.toString(),
+        title: meta.title ?? null,
+        description: meta.description ?? null,
+        image: meta.image ?? null,
+        updated_at: now(),
+      });
+    },
+
+    getListingMeta(listingId) {
+      return getMetaStmt.get(listingId.toString()) as
+        | { title: string | null; description: string | null; image: string | null }
+        | undefined;
     },
 
     getCursor() {

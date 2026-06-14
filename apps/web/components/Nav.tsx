@@ -3,36 +3,46 @@
 import Link from 'next/link';
 import { useAuth } from '@handoff/auth';
 import { shortAddr } from '@/lib/format';
-import { IS_MOCK } from '@/lib/chain';
 
 export default function Nav() {
-  const { isConnected, address, email, login, logout } = useAuth();
+  const { ready, isConnected, address, email, login, logout } = useAuth();
 
   return (
-    <header className="sticky top-0 z-10 border-b border-slate-200 bg-white/80 backdrop-blur">
-      <div className="mx-auto flex max-w-md items-center justify-between px-4 py-3">
-        <Link href="/" className="flex items-center gap-2 font-bold tracking-tight">
+    <header className="sticky top-0 z-10 border-b border-white/10 bg-zinc-950/70 backdrop-blur">
+      <div className="mx-auto flex max-w-md items-center justify-between gap-2 px-4 py-3">
+        <Link
+          href="/"
+          className="flex items-center gap-2 font-bold tracking-tight text-zinc-100"
+        >
           <span className="text-xl">🤝</span>
-          <span>Handoff</span>
-          {IS_MOCK && (
-            <span className="pill bg-amber-100 text-amber-800">mock</span>
-          )}
+          <span>SafeSwap</span>
         </Link>
-        <div className="text-sm">
+
+        <div className="flex items-center gap-2 text-sm">
           {isConnected ? (
-            <button
-              onClick={logout}
-              className="rounded-lg border border-slate-300 px-3 py-1.5 font-medium text-slate-700 hover:bg-slate-100"
-              title={address}
-            >
-              {email ?? shortAddr(address)}
-            </button>
+            <>
+              <div className="text-right leading-tight">
+                {email && (
+                  <div className="max-w-[150px] truncate text-xs text-zinc-200">{email}</div>
+                )}
+                <div className="font-mono text-[11px] text-zinc-500" title={address}>
+                  {shortAddr(address)}
+                </div>
+              </div>
+              <button
+                onClick={logout}
+                className="rounded-lg border border-white/15 bg-white/5 px-3 py-1.5 font-medium text-zinc-200 hover:bg-white/10"
+              >
+                Log out
+              </button>
+            </>
           ) : (
             <button
               onClick={login}
-              className="rounded-lg bg-brand px-3 py-1.5 font-semibold text-white hover:bg-brand-dark"
+              disabled={!ready}
+              className="rounded-lg bg-indigo-500 px-3 py-1.5 font-semibold text-white hover:bg-indigo-400 disabled:opacity-50"
             >
-              Log in
+              {ready ? 'Sign in' : '…'}
             </button>
           )}
         </div>

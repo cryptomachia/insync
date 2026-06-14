@@ -85,7 +85,7 @@ export default function DealPage({
     );
   }
   if (!deal) {
-    return <div className="py-10 text-center text-slate-500">Loading deal…</div>;
+    return <div className="py-10 text-center text-zinc-400">Loading deal…</div>;
   }
 
   const me = address?.toLowerCase();
@@ -213,7 +213,7 @@ function SellerActions({
         <div className="font-semibold">At the meet</div>
         {!checkedIn ? (
           <>
-            <p className="text-sm text-slate-600">
+            <p className="text-sm text-zinc-300">
               Check in when you arrive. This proves you showed up and protects your
               deposit if the buyer flakes.
             </p>
@@ -244,7 +244,7 @@ function SellerActions({
           <summary className="cursor-pointer font-semibold">
             Cancel this deal
           </summary>
-          <p className="mt-2 text-sm text-slate-600">{cancel.summary}</p>
+          <p className="mt-2 text-sm text-zinc-300">{cancel.summary}</p>
           <button
             className="btn-danger mt-3"
             disabled={disabled || busy === 'agreeCancel'}
@@ -284,7 +284,7 @@ function BuyerActions({
     <div className="space-y-4">
       <div className="card space-y-3">
         <div className="font-semibold">Release payment</div>
-        <p className="text-sm text-slate-600">{release.summary}</p>
+        <p className="text-sm text-zinc-300">{release.summary}</p>
         {!stable && (
           <InfoNote>
             We&apos;ll fetch a Chainlink Data Streams report so the seller receives
@@ -294,7 +294,7 @@ function BuyerActions({
 
         {!scanned ? (
           <>
-            <p className="text-sm text-slate-500">
+            <p className="text-sm text-zinc-400">
               Scan the seller&apos;s QR (or paste their code) to unlock the release
               button.
             </p>
@@ -332,7 +332,7 @@ function BuyerActions({
           <summary className="cursor-pointer font-semibold">
             Cancel instead
           </summary>
-          <p className="mt-2 text-sm text-slate-600">{cancel.summary}</p>
+          <p className="mt-2 text-sm text-zinc-300">{cancel.summary}</p>
           <button
             className="btn-danger mt-3"
             disabled={disabled || busy === 'buyerCancel'}
@@ -367,12 +367,12 @@ function TerminalCard({ deal }: { deal: Deal }) {
 function StatePill({ state }: { state: DealState }) {
   const tone =
     state === DealState.Completed
-      ? 'bg-emerald-100 text-emerald-700'
+      ? 'bg-emerald-500/15 text-emerald-300'
       : state === DealState.Forfeited
-      ? 'bg-rose-100 text-rose-700'
+      ? 'bg-rose-500/15 text-rose-300'
       : state === DealState.Refunded
-      ? 'bg-slate-200 text-slate-700'
-      : 'bg-indigo-100 text-indigo-700';
+      ? 'bg-white/10 text-zinc-300'
+      : 'bg-indigo-500/15 text-indigo-300';
   return <span className={`pill ${tone}`}>{DEAL_STATE_LABEL[state]}</span>;
 }
 
@@ -387,7 +387,7 @@ function KV({
 }) {
   return (
     <div className="flex justify-between gap-3 py-0.5">
-      <span className="text-slate-500">{k}</span>
+      <span className="text-zinc-400">{k}</span>
       <span className={mono ? 'font-mono text-xs' : ''}>{v}</span>
     </div>
   );

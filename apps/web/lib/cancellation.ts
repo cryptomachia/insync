@@ -82,12 +82,14 @@ export function completionOutcome(deal: Deal): CancelOutcome {
 export function policyText(priceUsd1e8: bigint, depositBps: number): string {
   const price = fmtUsd1e8(priceUsd1e8);
   const deposit = fmtUsd1e8(depositUsd1e8(priceUsd1e8, depositBps));
-  const pct = (depositBps / 100).toFixed(depositBps % 100 === 0 ? 0 : 2);
+  if (depositBps === 0) {
+    return `The ${price} you pay is held safely and is always refundable until you confirm you got the item. No deposit on this listing.`;
+  }
   return (
-    `Your ${price} item payment is always refundable to you. ` +
-    `On top of that you commit a ${deposit} deposit (${pct}% earnest money). ` +
-    `You only lose the deposit if you back out after the seller has shown up to meet you. ` +
-    `If the seller no-shows, you get everything back.`
+    `The ${price} you pay for the item is always refundable to you. ` +
+    `You also put down a small ${deposit} deposit that comes straight back the moment the deal completes. ` +
+    `You'd only lose it if you back out after the seller has already shown up to meet you — ` +
+    `and if the seller doesn't show, you get everything back.`
   );
 }
 
