@@ -6,6 +6,7 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
+    "serve": "node insync-server.js",
     "lint": "next lint",
     "typecheck": "tsc --noEmit"
   },
@@ -17,12 +18,14 @@
     "@handoff/qr": "*",
     "@swype-org/deposit": "^0.3.19",
     "next": "14.2.5",
+    "qrcode": "^1.5.4",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "viem": "^2.21.0"
   },
   "devDependencies": {
     "@types/node": "^20.14.0",
+    "@types/qrcode": "^1.5.5",
     "@types/react": "^18.3.3",
     "@types/react-dom": "^18.3.0",
     "autoprefixer": "^10.4.19",

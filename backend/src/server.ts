@@ -6,6 +6,9 @@ import { openDb } from './db.ts';
 import { buildApp } from './app.ts';
 import { createIndexer } from './indexer.ts';
 
+// Name the process so it shows up as "insync-backend" in Activity Monitor / `ps`.
+process.title = 'insync-backend';
+
 async function main(): Promise<void> {
   const cfg = loadConfig();
   const db = openDb(cfg.databasePath);

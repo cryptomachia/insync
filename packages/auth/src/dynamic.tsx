@@ -44,6 +44,10 @@ export function DynamicAuthProvider({ children }: { children: React.ReactNode })
         environmentId: ENV_ID,
         walletConnectors: [EthereumWalletConnectors],
         overrides: { evmNetworks: evmNetworks as never },
+        // We only need the wallet address — not a signed session/JWT — so connect WITHOUT
+        // the default "Sign In With Ethereum" verification signature. This removes the extra
+        // signature popup(s) on login; each on-chain action still signs its own tx.
+        initialAuthenticationMode: 'connect-only',
       }}
     >
       {children}
@@ -70,6 +74,10 @@ export function useDynamicAuth(): AuthState {
 export function useDynamicWalletClient(): WalletClient | undefined {
   const { primaryWallet } = useDynamicContext();
   const [client, setClient] = React.useState<WalletClient | undefined>(undefined);
+  // Dynamic can hand back a fresh `primaryWallet` object on every render; keying the effect
+  // on the stable address (not the object) means we fetch the wallet client once per account
+  // instead of re-initialising it on each re-render.
+  const address = primaryWallet?.address;
 
   React.useEffect(() => {
     let cancelled = false;
@@ -91,7 +99,8 @@ export function useDynamicWalletClient(): WalletClient | undefined {
     return () => {
       cancelled = true;
     };
-  }, [primaryWallet]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [address]);
 
   return client;
 }

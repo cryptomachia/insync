@@ -29,7 +29,7 @@ on-chain rule or a mutual in-person signature — never a judge, jury, or AI.
 ```
                          ┌──────────────────────────────┐
         email login      │        apps/web (Next.js)     │   mobile-first UI:
-   ┌──────────────────►  │   Sell · Buy · Deal · MyDeals │   list / fund / meet
+   ┌──────────────────►  │ Browse·Sell·Buy·Deal·Listings │   list / fund / meet
    │                     └───────┬───────────────┬───────┘
    │                             │ imports        │ reads/writes via viem
    │   packages/ (standalone npm workspaces)      │
@@ -152,6 +152,23 @@ Drop real keys into `.env` (see `.env.example` for every var), set
 contracts above, and re-run. You can flip sponsors on one at a time. Exact
 steps: [`e2e/CHECKLIST.md`](./e2e/CHECKLIST.md).
 
+### Run the live build locally (named processes)
+
+The two long-running services name themselves (`insync-backend` / `insync-web`)
+so they're easy to spot in Activity Monitor / `ps`:
+
+```bash
+# backend — indexer + API on :8787 (sources .env so the indexer runs)
+cd backend && set -a && . ./.env && set +a && npm run start
+
+# web — production build on :3100 (custom server → process is "insync-web")
+cd apps/web && npm run build && npm run serve
+```
+
+The indexer backfills lifecycle events from the contract's deploy block
+(`INDEXER_FROM_BLOCK` in `.env`) in ≤45k-block chunks, so public RPCs that cap
+`eth_getLogs` work out of the box. Open **http://localhost:3100**.
+
 ### Common targets
 
 | Target | What it does |
@@ -184,6 +201,10 @@ click-by-click steps is in **[DEMO.md](./DEMO.md)**. The integration order is in
   on-chain approve + `fund`.
 - **Test USDC.** The Base Sepolia USDC above is a test token for the demo, not
   Circle's canonical testnet USDC.
+- **Withdraw/relist is off-chain.** A seller withdrawing a listing flips an
+  off-chain flag (hidden from browse + a warning on the buy page); the escrow has
+  no seller `cancelListing`, so a true on-chain delist is a small contract
+  addition + redeploy.
 
 > Everything builds and the full e2e runs offline with `MOCK=true`. Live sponsor
 > infrastructure activates by dropping real keys into `.env`.

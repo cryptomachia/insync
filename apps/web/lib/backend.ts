@@ -54,6 +54,29 @@ export type SellerListing = {
   archived?: boolean;
 };
 
+export type MarketListing = {
+  listingId: string;
+  seller: string;
+  priceUsd1e8: string;
+  depositBps: number;
+  payToken: string;
+  title: string | null;
+  image: string | null;
+  meetAddress: string | null;
+};
+
+/** Purchasable listings for the browse grid (active + not withdrawn, with details). */
+export async function getActiveListings(): Promise<MarketListing[]> {
+  try {
+    const res = await fetch(`${BACKEND_URL}/listings/active`, { cache: 'no-store' });
+    if (!res.ok) return [];
+    const data = await res.json();
+    return (data?.listings ?? []) as MarketListing[];
+  } catch {
+    return [];
+  }
+}
+
 /** All listings created by a seller address (for "My listings"). */
 export async function getMyListings(address: string): Promise<SellerListing[]> {
   try {
@@ -112,6 +135,29 @@ export async function getListingMeta(
     return (data?.meta ?? data ?? null) as ListingMeta | null;
   } catch {
     return null;
+  }
+}
+
+export type DealEvent = {
+  event: string;
+  payload: string | null;
+  createdAt: number;
+};
+
+/** Lifecycle events recorded by the indexer for a deal (Funded/CheckedIn/Completed/…). */
+export async function getDealEvents(dealId: bigint | string): Promise<DealEvent[]> {
+  try {
+    const res = await fetch(`${BACKEND_URL}/deals/${dealId}`, { cache: 'no-store' });
+    if (!res.ok) return [];
+    const data = await res.json();
+    const rows = (data?.notifications ?? []) as Array<{
+      event: string;
+      payload: string | null;
+      created_at: number;
+    }>;
+    return rows.map((r) => ({ event: r.event, payload: r.payload, createdAt: r.created_at }));
+  } catch {
+    return [];
   }
 }
 

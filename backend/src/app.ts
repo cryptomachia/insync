@@ -82,6 +82,20 @@ export async function buildApp(opts: BuildAppOptions): Promise<FastifyInstance> 
     listings: db.getListings().map(serializeListing),
   }));
 
+  // Browse grid: purchasable listings (active + not withdrawn) enriched with title/photo/area.
+  app.get('/listings/active', async () => ({
+    listings: db.getActiveListings().map((l) => ({
+      listingId: l.listing_id,
+      seller: l.seller,
+      priceUsd1e8: l.price_usd_1e8,
+      depositBps: l.deposit_bps,
+      payToken: l.pay_token,
+      title: l.title,
+      image: l.image,
+      meetAddress: l.meet_address,
+    })),
+  }));
+
   app.get<{ Querystring: { user?: string } }>('/deals', async (req, reply) => {
     const user = req.query.user;
     if (user && !ADDR_RE.test(user)) {

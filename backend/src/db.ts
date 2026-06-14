@@ -100,6 +100,17 @@ export interface SellerListingRow {
   archived: number | null;
 }
 
+export interface MarketListingRow {
+  listing_id: string;
+  seller: string;
+  price_usd_1e8: string;
+  deposit_bps: number;
+  pay_token: string;
+  title: string | null;
+  image: string | null;
+  meet_address: string | null;
+}
+
 export interface HandoffDb {
   raw: Database.Database;
   upsertListing(l: {
@@ -114,6 +125,7 @@ export interface HandoffDb {
   setListingActive(listingId: bigint, active: boolean): void;
   getListings(): ListingRow[];
   getListing(listingId: bigint): ListingRow | undefined;
+  getActiveListings(): MarketListingRow[];
   upsertDealFromFunded(d: {
     dealId: bigint;
     listingId: bigint;
@@ -133,6 +145,8 @@ export interface HandoffDb {
   getDeal(dealId: bigint): DealRow | undefined;
   getDeals(user?: string): DealRow[];
   insertNotification(n: { dealId: bigint; event: string; payload?: unknown }): NotificationRow;
+  // Record a lifecycle event at most once per (deal, event) — idempotent across re-backfills.
+  recordEventOnce(n: { dealId: bigint; event: string; payload?: unknown }): void;
   getNotifications(dealId?: bigint): NotificationRow[];
   upsertListingMeta(
     listingId: bigint,
@@ -286,6 +300,16 @@ export function openDb(path: string): HandoffDb {
   );
   const getListingsStmt = raw.prepare(`SELECT * FROM listings ORDER BY CAST(listing_id AS INTEGER)`);
   const getListingStmt = raw.prepare(`SELECT * FROM listings WHERE listing_id=?`);
+  // Purchasable listings for the browse grid: on-chain active and not withdrawn off-chain,
+  // joined to their human details (title/photo/meet area). Newest first.
+  const getActiveListingsStmt = raw.prepare(`
+    SELECT l.listing_id, l.seller, l.price_usd_1e8, l.deposit_bps, l.pay_token,
+           m.title, m.image, m.meet_address
+    FROM listings l
+    LEFT JOIN listing_meta m ON m.listing_id = l.listing_id
+    WHERE l.active = 1 AND COALESCE(m.archived, 0) = 0
+    ORDER BY CAST(l.listing_id AS INTEGER) DESC
+  `);
 
   const upsertDealStmt = raw.prepare(`
     INSERT INTO deals (deal_id, listing_id, buyer, seller, pay_token, token_amount,
@@ -314,6 +338,13 @@ export function openDb(path: string): HandoffDb {
     VALUES (@deal_id, @event, @payload, @delivered, @created_at)
   `);
   const getNotificationByIdStmt = raw.prepare(`SELECT * FROM notifications WHERE id=?`);
+  const recordEventOnceStmt = raw.prepare(`
+    INSERT INTO notifications (deal_id, event, payload, delivered, created_at)
+    SELECT @deal_id, @event, @payload, 0, @created_at
+    WHERE NOT EXISTS (
+      SELECT 1 FROM notifications WHERE deal_id=@deal_id AND event=@event
+    )
+  `);
   const getNotificationsAllStmt = raw.prepare(
     `SELECT * FROM notifications ORDER BY id DESC`,
   );
@@ -400,6 +431,10 @@ export function openDb(path: string): HandoffDb {
       return getListingStmt.get(listingId.toString()) as ListingRow | undefined;
     },
 
+    getActiveListings() {
+      return getActiveListingsStmt.all() as MarketListingRow[];
+    },
+
     upsertDealFromFunded(d) {
       upsertDealStmt.run({
         deal_id: d.dealId.toString(),
@@ -461,6 +496,15 @@ export function openDb(path: string): HandoffDb {
         created_at: now(),
       });
       return getNotificationByIdStmt.get(info.lastInsertRowid as number) as NotificationRow;
+    },
+
+    recordEventOnce(n) {
+      recordEventOnceStmt.run({
+        deal_id: n.dealId.toString(),
+        event: n.event,
+        payload: n.payload != null ? JSON.stringify(n.payload) : null,
+        created_at: now(),
+      });
     },
 
     getNotifications(dealId) {

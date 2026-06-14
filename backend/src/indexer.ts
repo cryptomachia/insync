@@ -39,10 +39,23 @@ function makeClient(rpcUrl: string, pollingInterval?: number): PublicClient {
 // Map a single decoded Escrow event into DB writes. Exported for unit testing without a chain.
 export function handleEvent(
   db: HandoffDb,
-  ev: { eventName: string; args: Record<string, unknown>; blockNumber?: bigint | null },
+  ev: {
+    eventName: string;
+    args: Record<string, unknown>;
+    blockNumber?: bigint | null;
+    transactionHash?: string | null;
+  },
 ): void {
   const a = ev.args;
   const block = ev.blockNumber ?? null;
+  // Record each lifecycle transition once (with its tx hash) so the deal page can show a
+  // timeline and the receipt can link to the on-chain proof.
+  const mark = (dealId: bigint) =>
+    db.recordEventOnce({
+      dealId,
+      event: ev.eventName,
+      payload: { txHash: ev.transactionHash ?? null, block: block?.toString() ?? null },
+    });
   switch (ev.eventName) {
     case 'Listed':
       db.upsertListing({
@@ -74,11 +87,13 @@ export function handleEvent(
       });
       // A funded listing is no longer purchasable.
       db.setListingActive(listingId, false);
+      mark(a.dealId as bigint);
       break;
     }
 
     case 'CheckedIn':
       db.setDealState(a.dealId as bigint, DealState.SellerCheckedIn, { sellerCheckedIn: true });
+      mark(a.dealId as bigint);
       break;
 
     case 'Completed':
@@ -86,12 +101,14 @@ export function handleEvent(
         sellerPaid: a.sellerPaid as bigint,
         buyerRefunded: a.buyerRefunded as bigint,
       });
+      mark(a.dealId as bigint);
       break;
 
     case 'Refunded':
       db.setDealState(a.dealId as bigint, DealState.Refunded, {
         buyerRefunded: a.amount as bigint,
       });
+      mark(a.dealId as bigint);
       break;
 
     case 'Forfeited':
@@ -99,6 +116,7 @@ export function handleEvent(
         buyerRefunded: a.toBuyer as bigint,
         sellerPaid: a.toSeller as bigint,
       });
+      mark(a.dealId as bigint);
       break;
 
     default:
@@ -119,6 +137,7 @@ export function createIndexer(opts: IndexerOptions): Indexer {
         eventName?: string;
         args?: Record<string, unknown>;
         blockNumber?: bigint | null;
+        transactionHash?: string | null;
       };
       if (!decoded.eventName || !decoded.args) continue;
       // A single malformed/unexpected log shouldn't abort the whole backfill.
@@ -127,6 +146,7 @@ export function createIndexer(opts: IndexerOptions): Indexer {
           eventName: decoded.eventName,
           args: decoded.args,
           blockNumber: decoded.blockNumber ?? null,
+          transactionHash: decoded.transactionHash ?? null,
         });
       } catch (err) {
         console.error(

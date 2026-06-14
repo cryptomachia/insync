@@ -8,6 +8,7 @@ import { listItem } from '@/lib/tx';
 import { saveListingMeta } from '@/lib/backend';
 import { parseUsdToUsd1e8, fmtUsd1e8, depositUsd1e8, totalUsd1e8 } from '@/lib/format';
 import { ErrorNote, SuccessNote, InfoNote, errMsg } from '@/components/Notice';
+import ShareListing from '@/components/ShareListing';
 
 // "No-show protection" levels — plain language instead of bps/earnest-money jargon.
 const PROTECTION = [
@@ -158,7 +159,7 @@ export default function SellPage() {
         <SuccessNote>
           <div className="space-y-2">
             <div className="font-semibold">Your item is live (listing #{listingId.toString()}).</div>
-            <div>Share this link with your buyer — they open it to lock their payment:</div>
+            <div>Show the QR in person, or share the link — the buyer opens it to lock payment:</div>
             <Link
               href={`/buy/${listingId.toString()}`}
               className="block break-all rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 font-mono text-xs text-indigo-300 underline"
@@ -167,6 +168,13 @@ export default function SellPage() {
             </Link>
           </div>
         </SuccessNote>
+
+        <div className="card">
+          <ShareListing
+            url={`${typeof window !== 'undefined' ? window.location.origin : ''}/buy/${listingId.toString()}`}
+            title={name || `inSync listing #${listingId.toString()}`}
+          />
+        </div>
         <Link href={`/buy/${listingId.toString()}`} className="btn-primary">
           Preview the buyer's view
         </Link>

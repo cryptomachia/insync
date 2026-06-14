@@ -81,11 +81,39 @@ export default function DocsPage() {
       <Section title="Finding each other (the meetup)">
         <p>Committing to a trade is only half of it — you still have to actually meet. inSync handles that:</p>
         <ul className="mt-3 space-y-2">
-          <Bullet>The seller sets a <b className="text-zinc-200">meeting spot</b> when listing, and can share a phone number.</Bullet>
-          <Bullet>The buyer sees the spot on a map (with directions) <i>before</i> paying.</Bullet>
           <Bullet>
-            Once payment is locked, both people can <b className="text-zinc-200">share live location</b> on a
-            map and tap to call — so you find each other, and stay in touch if the spot changes.
+            The seller sets a <b className="text-zinc-200">meeting spot and time</b> when listing, and can
+            share a phone, email, and notes for the buyer.
+          </Bullet>
+          <Bullet>The buyer sees the spot on a map (with directions) and all the details <i>before</i> paying.</Bullet>
+          <Bullet>
+            Once payment is locked, <b className="text-zinc-200">both people</b> can share live location on a
+            map, share their phone + email, and tap to call.
+          </Bullet>
+          <Bullet>
+            Plans changed? Either side can <b className="text-zinc-200">propose a new spot or time</b> right in
+            the deal — the other person sees it instantly.
+          </Bullet>
+        </ul>
+      </Section>
+
+      <Section title="Browsing, managing, and receipts">
+        <ul className="space-y-2">
+          <Bullet>
+            Buyers can <b className="text-zinc-200">browse and search</b> all live items, or open a direct link/QR
+            the seller shares in person.
+          </Bullet>
+          <Bullet>
+            Sellers manage everything under <b className="text-zinc-200">My listings</b> — edit details, withdraw,
+            or relist an item.
+          </Bullet>
+          <Bullet>
+            Every deal shows a <b className="text-zinc-200">live progress timeline</b> (payment locked → seller
+            checked in → released) with timestamps.
+          </Bullet>
+          <Bullet>
+            When a deal settles, both sides get a <b className="text-zinc-200">printable receipt</b> with the
+            amounts, contacts, and links to the on-chain proof.
           </Bullet>
         </ul>
       </Section>
@@ -153,6 +181,12 @@ export default function DocsPage() {
         <Faq q="Who holds my money before the meet?">
           A public smart contract — not the seller and not inSync. It can only pay out by the
           rules above.
+        </Faq>
+        <Faq q="Why doesn’t it make me sign a bunch of times to log in?">
+          Signing in just connects your wallet — we don&apos;t ask for an extra
+          &ldquo;login&rdquo; signature. You only approve a signature when you actually do
+          something on-chain (lock payment, check in, release), and each of those is a single,
+          necessary step.
         </Faq>
       </Section>
 
