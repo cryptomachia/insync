@@ -122,13 +122,11 @@ constructor args (no `0x`): `000000000000000000000000f4e59c1c79a6ff313e64b9b9398
 
 ## Sponsors used
 
-- **Chainlink CRE** (anchor) — the `cre/` workflow polls for past-expiry deals
-  and submits `reclaimExpired(dealId, report)` on-chain; that keeper transaction
-  is the concrete Chainlink-driven state change.
-- **Chainlink Data Streams** — pull-based, sub-second price for volatile-token
-  settlement; the signed report is verified on-chain inside the escrow.
-- **Dynamic** — embedded wallets with email login (no seed phrase).
-- **Blink** — one-tap USDC funding (approve + `Escrow.fund` in a single tap).
+Single source link per sponsor (the primary integration point):
+
+- **Chainlink** — [`cre/src/workflow.ts`](https://github.com/cryptomachia/insync/blob/main/cre/src/workflow.ts) — the CRE workflow (anchor) sweeps past-expiry deals on a cron and submits `reclaimExpired(dealId, report)` on-chain. Data Streams price-lock: signed report fetched in [`packages/datastreams/src/index.ts#L114-L158`](https://github.com/cryptomachia/insync/blob/main/packages/datastreams/src/index.ts#L114-L158) and verified on-chain at [`contracts/src/Escrow.sol#L503-L508`](https://github.com/cryptomachia/insync/blob/main/contracts/src/Escrow.sol#L503-L508).
+- **Dynamic** — [`packages/auth/src/dynamic.tsx`](https://github.com/cryptomachia/insync/blob/main/packages/auth/src/dynamic.tsx) — embedded wallets with email login (no seed phrase), connect-only mode, Base Sepolia registered.
+- **Blink** — [`packages/funding/src/index.tsx#L103-L131`](https://github.com/cryptomachia/insync/blob/main/packages/funding/src/index.tsx#L103-L131) — one-tap USDC deposit via the Blink SDK; merchant signer (ECDSA P-256) at [`apps/web/app/api/sign-payment/route.ts`](https://github.com/cryptomachia/insync/blob/main/apps/web/app/api/sign-payment/route.ts).
 
 ## Test status
 
