@@ -2,10 +2,10 @@
 // Handoff — Chainlink CRE workflow (the escrow's orchestration brain)
 // =============================================================================
 //
-// PRIZE ANCHOR: "Best CRE workflow". On a cron schedule, this workflow sweeps
-// the Handoff Escrow for deals that have passed their `expiry` and are NOT in a
-// terminal state, and submits an on-chain `reclaimExpired(dealId, report)` for
-// each one. THAT contract call is the on-chain state change the prize requires.
+// On a cron schedule, this workflow sweeps the Escrow for deals that have passed
+// their `expiry` and are NOT in a terminal state, and submits an on-chain
+// `reclaimExpired(dealId, report)` for each one — that contract call is the
+// on-chain state change.
 //
 // WHERE CHAINLINK CAUSES THE STATE CHANGE (read this):
 //   1. The CRE DON runs this TypeScript (compiled to WASM via the CRE CLI) on
@@ -96,8 +96,8 @@ type Config = z.infer<typeof configSchema>
 // Node-only code into the WASM sandbox), so we inline the same MOCK contract:
 // stable/USDC deals → `0x`. A volatile-token integration would fetch the signed
 // report through the CRE HTTPClient capability against the Data Streams REST
-// API and pass it here; for the hackathon MOCK path this returns `0x`, exactly
-// like @handoff/datastreams.getReport.
+// API and pass it here; for the MOCK path this returns `0x`, exactly like
+// @handoff/datastreams.getReport.
 // -----------------------------------------------------------------------------
 const MOCK_REPORT: `0x${string}` = '0x'
 

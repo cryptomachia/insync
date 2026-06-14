@@ -55,7 +55,7 @@ contract Deploy is Script {
             console2.log("Using existing VerifierProxy:", verifier);
         }
 
-        // --- Reputation (optional; owned by AGENT 2, address(0) by default) ---
+        // --- Reputation (optional; address(0) by default) ---
         reputation = _envAddress("REPUTATION_ADDRESS");
         if (reputation != address(0)) {
             console2.log("Using existing Reputation:", reputation);

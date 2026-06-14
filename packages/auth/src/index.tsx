@@ -1,5 +1,5 @@
 // @handoff/auth — Dynamic embedded wallets (email login), with a local mock mode.
-// SPEC §7. Exports are a FROZEN contract (AGENT 8 depends on them):
+// SPEC §7. Exports are a frozen contract the web app depends on:
 //   HandoffAuthProvider({ children })
 //   useAuth()        -> { ready, isConnected, address?, email?, login, logout }
 //   useWalletClient() -> viem WalletClient | undefined

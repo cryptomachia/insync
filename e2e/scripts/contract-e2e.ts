@@ -8,7 +8,7 @@
 //
 // It is intentionally tolerant of details it cannot control across modules
 // (e.g. exact MockVerifier API): the report blob comes from @handoff/datastreams
-// (mock -> '0x', which AGENT 1's MockVerifier accepts per SPEC §6), and stable
+// (mock -> '0x', which the MockVerifier accepts per SPEC §6), and stable
 // vs volatile is decided by whether VERIFIER_PROXY_ADDRESS is configured.
 
 import { decodeEventLog, type Abi, type Log } from 'viem';

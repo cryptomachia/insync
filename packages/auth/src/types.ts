@@ -1,4 +1,4 @@
-// Shared auth shapes (SPEC §7 — frozen contract; AGENT 8 depends on these).
+// Shared auth shapes (SPEC §7 — frozen contract the web app depends on).
 
 export interface AuthState {
   ready: boolean;

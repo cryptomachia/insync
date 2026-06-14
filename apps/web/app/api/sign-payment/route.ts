@@ -44,7 +44,7 @@ function validate(b: any): string[] {
 }
 
 // PRODUCTION HARDENING (per docs.blink.cash/integration/signer-endpoint):
-// This route is intentionally OPEN for the hackathon demo. Before any real-money
+// This route is intentionally OPEN for the demo. Before any real-money
 // deployment it MUST be locked down so it can only mint a signed deposit envelope
 // for a legitimate, authenticated caller. Minimum bar:
 //   1. AUTHENTICATE the caller — require a session/JWT from the logged-in Dynamic

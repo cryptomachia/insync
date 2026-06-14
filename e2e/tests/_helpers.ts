@@ -1,6 +1,6 @@
 // e2e/tests/_helpers.ts — resilient locators for the Handoff web UI.
 //
-// AGENT 10 cannot see AGENT 8's exact markup, so these helpers target the app
+// To stay decoupled from the exact markup, these helpers target the app
 // by ROLE + accessible NAME / visible TEXT derived from SPEC §10 (Sell / Buy /
 // Deal / Status screens) rather than brittle CSS selectors. Each helper accepts
 // regex name matches and tries a couple of synonyms. If your app uses different

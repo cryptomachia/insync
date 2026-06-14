@@ -1,4 +1,4 @@
-// AGENT 6 — Funding package (Blink one-tap USDC deposit). SPEC §8.
+// Funding package (Blink one-tap USDC deposit). SPEC §8.
 //
 // Exports (FROZEN — do not rename):
 //   FundButton(props)  → the one-tap CTA; calls fund(), fires onFunded(dealId)/onError(e)
