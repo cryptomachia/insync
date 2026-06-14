@@ -92,7 +92,7 @@ Data Streams at the moment of the call, with surplus returned to the buyer.
 
 | Contract | Address |
 |---|---|
-| Escrow | [`0xaA2A7D734a1d10BB60e08fE306474687266cb38F`](https://sepolia.basescan.org/address/0xaA2A7D734a1d10BB60e08fE306474687266cb38F) |
+| Escrow | [`0x660b15A7a9caE8A0D8c380F0764103BC24c07B1d`](https://sepolia.basescan.org/address/0x660b15A7a9caE8A0D8c380F0764103BC24c07B1d) |
 | USDC (test) | [`0xf4E59C1c79A6fF313E64b9B9398A03Da60Ba8Ff8`](https://sepolia.basescan.org/address/0xf4E59C1c79A6fF313E64b9B9398A03Da60Ba8Ff8) |
 | MockVerifier | [`0xABe64efA8ffF93C129Dad6Cc3F1E53F50a7EecBC`](https://sepolia.basescan.org/address/0xABe64efA8ffF93C129Dad6Cc3F1E53F50a7EecBC) |
 
@@ -107,7 +107,7 @@ funds — this is what backs the "trustless, no one can touch it" claim. Easiest
 
 ```bash
 cd contracts
-forge verify-contract 0xaA2A7D734a1d10BB60e08fE306474687266cb38F src/Escrow.sol:Escrow \
+forge verify-contract 0x660b15A7a9caE8A0D8c380F0764103BC24c07B1d src/Escrow.sol:Escrow \
   --chain base-sepolia --watch --verifier etherscan \
   --etherscan-api-key <BASESCAN_API_KEY> \
   --constructor-args $(cast abi-encode "constructor(address,address,address)" \

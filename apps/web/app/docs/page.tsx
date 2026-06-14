@@ -5,7 +5,7 @@ export const metadata = {
   description: 'A plain-English guide to buying and selling from strangers, safely, in person.',
 };
 
-const ESCROW = '0xaA2A7D734a1d10BB60e08fE306474687266cb38F';
+const ESCROW = '0x660b15A7a9caE8A0D8c380F0764103BC24c07B1d';
 
 const ARCHITECTURE = `
 ┌──────────────────────── mobile web · Next.js (apps/web) ────────────────────────┐

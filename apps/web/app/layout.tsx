@@ -4,7 +4,7 @@ import './globals.css';
 import Providers from '@/components/Providers';
 import Nav from '@/components/Nav';
 
-const ESCROW = '0xaA2A7D734a1d10BB60e08fE306474687266cb38F';
+const ESCROW = '0x660b15A7a9caE8A0D8c380F0764103BC24c07B1d';
 
 export const metadata: Metadata = {
   title: 'inSync — trustless in-person escrow',
