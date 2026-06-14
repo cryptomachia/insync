@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
+import { DealState } from '@handoff/contracts-abi';
 import { readDeal, type Deal, DEAL_STATE_LABEL, isTerminal } from '@/lib/escrow';
 import {
   getDealEvents,
@@ -88,11 +89,11 @@ export default function ReceiptPage({ params }: { params: { dealId: string } }) 
   const deposit = depositUsd1e8(deal.priceUsd1e8, deal.depositBps);
   const total = totalUsd1e8(deal.priceUsd1e8, deal.depositBps);
   const terminalName =
-    DEAL_STATE_LABEL[deal.state] === 'Completed'
+    deal.state === DealState.Completed
       ? 'Completed'
-      : DEAL_STATE_LABEL[deal.state] === 'Refunded'
+      : deal.state === DealState.Refunded
       ? 'Refunded'
-      : DEAL_STATE_LABEL[deal.state] === 'Forfeited'
+      : deal.state === DealState.Forfeited
       ? 'Forfeited'
       : null;
   const settledAt = terminalName

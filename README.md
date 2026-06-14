@@ -92,8 +92,31 @@ Data Streams at the moment of the call, with surplus returned to the buyer.
 |---|---|
 | Escrow | [`0xaA2A7D734a1d10BB60e08fE306474687266cb38F`](https://sepolia.basescan.org/address/0xaA2A7D734a1d10BB60e08fE306474687266cb38F) |
 | USDC (test) | [`0xf4E59C1c79A6fF313E64b9B9398A03Da60Ba8Ff8`](https://sepolia.basescan.org/address/0xf4E59C1c79A6fF313E64b9B9398A03Da60Ba8Ff8) |
-| Reputation | [`0x7036FF7A5EcA175c6422402919a0eECc4Df9CD07`](https://sepolia.basescan.org/address/0x7036FF7A5EcA175c6422402919a0eECc4Df9CD07) |
 | MockVerifier | [`0xABe64efA8ffF93C129Dad6Cc3F1E53F50a7EecBC`](https://sepolia.basescan.org/address/0xABe64efA8ffF93C129Dad6Cc3F1E53F50a7EecBC) |
+
+This Escrow was deployed with constructor args `(stableToken=USDC, verifierProxy=MockVerifier,
+reputation=address(0))` — the reputation tally is optional and is not wired into this
+particular deployment.
+
+### Verify the contract on Basescan
+
+Verifying the Escrow source lets anyone read the exact rules that govern their escrowed
+funds — this is what backs the "trustless, no one can touch it" claim. Easiest path:
+
+```bash
+cd contracts
+forge verify-contract 0xaA2A7D734a1d10BB60e08fE306474687266cb38F src/Escrow.sol:Escrow \
+  --chain base-sepolia --watch --verifier etherscan \
+  --etherscan-api-key <BASESCAN_API_KEY> \
+  --constructor-args $(cast abi-encode "constructor(address,address,address)" \
+    0xf4E59C1c79A6fF313E64b9B9398A03Da60Ba8Ff8 \
+    0xABe64efA8ffF93C129Dad6Cc3F1E53F50a7EecBC \
+    0x0000000000000000000000000000000000000000)
+```
+
+Manual "Verify & Publish" on sepolia.basescan.org — Compiler: `v0.8.24+commit.e11b9ed9`,
+Optimization: `Yes`, Runs: `200`, EVM version: `cancun`, License: `MIT`, ABI-encoded
+constructor args (no `0x`): `000000000000000000000000f4e59c1c79a6ff313e64b9b9398a03da60ba8ff8000000000000000000000000abe64efa8fff93c129dad6cc3f1e53f50a7eecbc0000000000000000000000000000000000000000000000000000000000000000`
 
 ## Sponsors used
 
@@ -107,7 +130,7 @@ Data Streams at the moment of the call, with surplus returned to the buyer.
 
 ## Test status
 
-- **68 contract tests** (Foundry): happy path, every §4 cancellation branch,
+- **76 contract tests** (Foundry): happy path, every §4 cancellation branch,
   volatile-token release through a mock verifier, reentrancy, access control.
 - **Script-level on-chain e2e** (`e2e/scripts/contract-e2e.ts`, viem): every §4
   outcome plus the volatile Data Streams release, run directly against the chain.
@@ -168,6 +191,13 @@ cd apps/web && npm run build && npm run serve
 The indexer backfills lifecycle events from the contract's deploy block
 (`INDEXER_FROM_BLOCK` in `.env`) in ≤45k-block chunks, so public RPCs that cap
 `eth_getLogs` work out of the box. Open **http://localhost:3100**.
+
+A fresh email wallet holds no USDC, so funding auto-tops-up from a **test-USDC
+faucet** (`POST /faucet`) that mints the test token to the buyer (signed by the
+deployer key in gitignored `backend/.env`), then runs approve + fund. The buyer
+still needs a little Base Sepolia ETH for gas. (Blink one-tap funding is behind
+`NEXT_PUBLIC_ENABLE_BLINK`; off by default since its hosted browser SDK can't be
+bundled.)
 
 ### Common targets
 
