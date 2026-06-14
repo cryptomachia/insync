@@ -168,8 +168,8 @@ export function createIndexer(opts: IndexerOptions): Indexer {
     if (maxBlock > db.getCursor()) db.setCursor(maxBlock);
   }
 
-  // Public RPCs cap eth_getLogs at ~50k blocks per request, so walk the range in windows.
-  const MAX_RANGE = 45_000n;
+  // Public RPCs cap eth_getLogs per request (e.g. drpc ~10k); walk the range in safe windows.
+  const MAX_RANGE = 9_000n;
 
   async function backfill(): Promise<void> {
     const cursor = db.getCursor();
