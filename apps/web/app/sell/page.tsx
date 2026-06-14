@@ -51,6 +51,10 @@ export default function SellPage() {
   const [image, setImage] = useState<string | null>(null);
   const [priceStr, setPriceStr] = useState('');
   const [depositBps, setDepositBps] = useState(1000);
+  const [meetAddress, setMeetAddress] = useState('');
+  const [meetCoords, setMeetCoords] = useState<{ lat: number; lng: number } | null>(null);
+  const [sellerPhone, setSellerPhone] = useState('');
+  const [locBusy, setLocBusy] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [warn, setWarn] = useState<string | null>(null);
@@ -68,6 +72,22 @@ export default function SellPage() {
     } catch {
       setError('Could not read that image. Try a different photo.');
     }
+  }
+
+  function useMyLocation() {
+    if (!navigator.geolocation) return setError('Location isn’t available in this browser.');
+    setLocBusy(true);
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setMeetCoords({ lat: pos.coords.latitude, lng: pos.coords.longitude });
+        setLocBusy(false);
+      },
+      () => {
+        setError('Could not get your location (permission denied?).');
+        setLocBusy(false);
+      },
+      { enableHighAccuracy: true, timeout: 10000 },
+    );
   }
 
   async function onSubmit() {
@@ -89,6 +109,10 @@ export default function SellPage() {
           title: name.trim(),
           description: description.trim() || undefined,
           image: image || undefined,
+          meetAddress: meetAddress.trim() || undefined,
+          meetLat: meetCoords?.lat,
+          meetLng: meetCoords?.lng,
+          sellerPhone: sellerPhone.trim() || undefined,
         });
       } catch {
         setWarn('Listing created, but the photo/description failed to save (backend offline?).');
@@ -241,6 +265,48 @@ export default function SellPage() {
               </button>
             ))}
           </div>
+        </div>
+
+        {/* Where to meet */}
+        <div>
+          <span className="label">Where to meet</span>
+          <input
+            className="input"
+            value={meetAddress}
+            onChange={(e) => setMeetAddress(e.target.value)}
+            placeholder="e.g. Apple Store, 5th Ave, NYC"
+          />
+          <button type="button" onClick={useMyLocation} className="btn-secondary mt-2">
+            {locBusy
+              ? 'Getting location…'
+              : meetCoords
+                ? '📍 Pinned — update location'
+                : '📍 Use my current location'}
+          </button>
+          {meetCoords && (
+            <p className="mt-1 text-xs text-zinc-500">
+              Pinned at {meetCoords.lat.toFixed(4)}, {meetCoords.lng.toFixed(4)} — the buyer gets a
+              map + directions.
+            </p>
+          )}
+        </div>
+
+        {/* Phone */}
+        <div>
+          <label className="label" htmlFor="phone">
+            Phone <span className="text-zinc-500">(optional, shared with the buyer)</span>
+          </label>
+          <input
+            id="phone"
+            className="input"
+            inputMode="tel"
+            value={sellerPhone}
+            onChange={(e) => setSellerPhone(e.target.value)}
+            placeholder="+1 555 123 4567"
+          />
+          <p className="mt-1 text-xs text-zinc-500">
+            Recommended — so the buyer can reach you if the meeting spot changes.
+          </p>
         </div>
 
         {/* Summary */}

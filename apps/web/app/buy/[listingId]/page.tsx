@@ -6,7 +6,7 @@ import { useAuth, useWalletClient } from '@handoff/auth';
 import { FundButton } from '@handoff/funding';
 import { getTokenPriceUsd1e8 } from '@handoff/datastreams';
 import { readListing, type Listing } from '@/lib/escrow';
-import { getListingMeta, type ListingMeta } from '@/lib/backend';
+import { getListingMeta, shareCoordination, type ListingMeta } from '@/lib/backend';
 import {
   fmtUsd1e8,
   depositUsd1e8,
@@ -150,6 +150,37 @@ export default function BuyListingPage({ params }: { params: { listingId: string
         )}
       </div>
 
+      {(meta?.meetAddress || meta?.meetLat != null) && (
+        <div className="card space-y-2">
+          <div className="font-semibold">Where you&apos;ll meet</div>
+          {meta?.meetAddress && <div className="surface text-sm text-zinc-200">📍 {meta.meetAddress}</div>}
+          {meta?.meetLat != null && meta?.meetLng != null && (
+            <>
+              <iframe
+                title="meet location"
+                src={`https://maps.google.com/maps?q=${meta.meetLat},${meta.meetLng}&z=15&output=embed`}
+                className="h-40 w-full rounded-xl border border-white/10"
+                loading="lazy"
+              />
+              <a
+                className="btn-secondary"
+                href={`https://www.google.com/maps?q=${meta.meetLat},${meta.meetLng}`}
+                target="_blank"
+                rel="noreferrer"
+              >
+                Open in Google Maps ↗
+              </a>
+            </>
+          )}
+          {meta?.sellerPhone && (
+            <a className="btn-secondary" href={`tel:${meta.sellerPhone}`}>📞 Seller · {meta.sellerPhone}</a>
+          )}
+          <p className="text-xs text-zinc-500">
+            You&apos;ll get the seller&apos;s live location + directions after you lock payment.
+          </p>
+        </div>
+      )}
+
       {fundErr && <ErrorNote>{fundErr}</ErrorNote>}
 
       {!isConnected ? (
@@ -165,7 +196,18 @@ export default function BuyListingPage({ params }: { params: { listingId: string
               freeCancelUntil={BigInt(nowSec() + FREE_CANCEL_WINDOW)}
               expiry={BigInt(nowSec() + EXPIRY_WINDOW)}
               walletClient={walletClient}
-              onFunded={(d) => setDealId(d)}
+              onFunded={(d) => {
+                setDealId(d);
+                // Seed the seller's listed location + phone into the deal so both
+                // parties see them on the coordination screen.
+                if (meta && (meta.meetLat != null || meta.sellerPhone)) {
+                  shareCoordination(d, 'seller', {
+                    lat: meta.meetLat ?? undefined,
+                    lng: meta.meetLng ?? undefined,
+                    phone: meta.sellerPhone ?? undefined,
+                  }).catch(() => {});
+                }
+              }}
               onError={(e) => setFundErr(errMsg(e))}
             />
           </div>

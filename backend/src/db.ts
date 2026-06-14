@@ -66,6 +66,24 @@ export interface NotificationRow {
   created_at: number;
 }
 
+export interface ListingMetaRow {
+  title: string | null;
+  description: string | null;
+  image: string | null;
+  meet_address: string | null;
+  meet_lat: number | null;
+  meet_lng: number | null;
+  seller_phone: string | null;
+}
+
+export interface CoordinationRow {
+  role: 'buyer' | 'seller';
+  lat: number | null;
+  lng: number | null;
+  phone: string | null;
+  updated_at: number;
+}
+
 export interface HandoffDb {
   raw: Database.Database;
   upsertListing(l: {
@@ -101,11 +119,23 @@ export interface HandoffDb {
   getNotifications(dealId?: bigint): NotificationRow[];
   upsertListingMeta(
     listingId: bigint,
-    meta: { title?: string; description?: string; image?: string },
+    meta: {
+      title?: string;
+      description?: string;
+      image?: string;
+      meetAddress?: string;
+      meetLat?: number;
+      meetLng?: number;
+      sellerPhone?: string;
+    },
   ): void;
-  getListingMeta(
-    listingId: bigint,
-  ): { title: string | null; description: string | null; image: string | null } | undefined;
+  getListingMeta(listingId: bigint): ListingMetaRow | undefined;
+  upsertCoordination(
+    dealId: bigint,
+    role: 'buyer' | 'seller',
+    c: { lat?: number; lng?: number; phone?: string },
+  ): void;
+  getCoordination(dealId: bigint): CoordinationRow[];
   getCursor(): bigint;
   setCursor(block: bigint): void;
   close(): void;
@@ -161,11 +191,27 @@ CREATE TABLE IF NOT EXISTS indexer_state (
 -- Off-chain, human-facing listing details (item name, description, photo) keyed by
 -- the on-chain listingId. The contract stores none of this; the buyer's page joins it in.
 CREATE TABLE IF NOT EXISTS listing_meta (
-  listing_id  TEXT PRIMARY KEY,
-  title       TEXT,
-  description TEXT,
-  image       TEXT,
-  updated_at  INTEGER NOT NULL
+  listing_id   TEXT PRIMARY KEY,
+  title        TEXT,
+  description  TEXT,
+  image        TEXT,
+  meet_address TEXT,
+  meet_lat     REAL,
+  meet_lng     REAL,
+  seller_phone TEXT,
+  updated_at   INTEGER NOT NULL
+);
+
+-- Live meetup coordination per deal: each party (buyer/seller) shares a live location
+-- and/or a phone number once they've committed and are heading to the meet.
+CREATE TABLE IF NOT EXISTS deal_coordination (
+  deal_id    TEXT NOT NULL,
+  role       TEXT NOT NULL,           -- 'buyer' | 'seller'
+  lat        REAL,
+  lng        REAL,
+  phone      TEXT,
+  updated_at INTEGER NOT NULL,
+  PRIMARY KEY (deal_id, role)
 );
 `;
 
@@ -176,6 +222,15 @@ export function openDb(path: string): HandoffDb {
   const raw = new Database(path);
   raw.pragma('journal_mode = WAL');
   raw.exec(SCHEMA);
+
+  // Migrate older DBs that predate the meetup columns (no-op when they already exist).
+  for (const col of ['meet_address TEXT', 'meet_lat REAL', 'meet_lng REAL', 'seller_phone TEXT']) {
+    try {
+      raw.exec(`ALTER TABLE listing_meta ADD COLUMN ${col}`);
+    } catch {
+      /* column already exists */
+    }
+  }
 
   const upsertListingStmt = raw.prepare(`
     INSERT INTO listings (listing_id, seller, price_usd_1e8, deposit_bps, pay_token, active, created_block, updated_at)
@@ -229,13 +284,33 @@ export function openDb(path: string): HandoffDb {
   );
 
   const upsertMetaStmt = raw.prepare(`
-    INSERT INTO listing_meta (listing_id, title, description, image, updated_at)
-    VALUES (@listing_id, @title, @description, @image, @updated_at)
+    INSERT INTO listing_meta (listing_id, title, description, image, meet_address, meet_lat, meet_lng, seller_phone, updated_at)
+    VALUES (@listing_id, @title, @description, @image, @meet_address, @meet_lat, @meet_lng, @seller_phone, @updated_at)
     ON CONFLICT(listing_id) DO UPDATE SET
-      title=excluded.title, description=excluded.description, image=excluded.image, updated_at=excluded.updated_at
+      title=COALESCE(excluded.title, listing_meta.title),
+      description=COALESCE(excluded.description, listing_meta.description),
+      image=COALESCE(excluded.image, listing_meta.image),
+      meet_address=COALESCE(excluded.meet_address, listing_meta.meet_address),
+      meet_lat=COALESCE(excluded.meet_lat, listing_meta.meet_lat),
+      meet_lng=COALESCE(excluded.meet_lng, listing_meta.meet_lng),
+      seller_phone=COALESCE(excluded.seller_phone, listing_meta.seller_phone),
+      updated_at=excluded.updated_at
   `);
   const getMetaStmt = raw.prepare(
-    `SELECT title, description, image FROM listing_meta WHERE listing_id=?`,
+    `SELECT title, description, image, meet_address, meet_lat, meet_lng, seller_phone FROM listing_meta WHERE listing_id=?`,
+  );
+
+  const upsertCoordStmt = raw.prepare(`
+    INSERT INTO deal_coordination (deal_id, role, lat, lng, phone, updated_at)
+    VALUES (@deal_id, @role, @lat, @lng, @phone, @updated_at)
+    ON CONFLICT(deal_id, role) DO UPDATE SET
+      lat=COALESCE(excluded.lat, deal_coordination.lat),
+      lng=COALESCE(excluded.lng, deal_coordination.lng),
+      phone=COALESCE(excluded.phone, deal_coordination.phone),
+      updated_at=excluded.updated_at
+  `);
+  const getCoordStmt = raw.prepare(
+    `SELECT role, lat, lng, phone, updated_at FROM deal_coordination WHERE deal_id=?`,
   );
 
   const getCursorStmt = raw.prepare(`SELECT last_block FROM indexer_state WHERE id=1`);
@@ -348,14 +423,31 @@ export function openDb(path: string): HandoffDb {
         title: meta.title ?? null,
         description: meta.description ?? null,
         image: meta.image ?? null,
+        meet_address: meta.meetAddress ?? null,
+        meet_lat: meta.meetLat ?? null,
+        meet_lng: meta.meetLng ?? null,
+        seller_phone: meta.sellerPhone ?? null,
         updated_at: now(),
       });
     },
 
     getListingMeta(listingId) {
-      return getMetaStmt.get(listingId.toString()) as
-        | { title: string | null; description: string | null; image: string | null }
-        | undefined;
+      return getMetaStmt.get(listingId.toString()) as ListingMetaRow | undefined;
+    },
+
+    upsertCoordination(dealId, role, c) {
+      upsertCoordStmt.run({
+        deal_id: dealId.toString(),
+        role,
+        lat: c.lat ?? null,
+        lng: c.lng ?? null,
+        phone: c.phone ?? null,
+        updated_at: now(),
+      });
+    },
+
+    getCoordination(dealId) {
+      return getCoordStmt.all(dealId.toString()) as CoordinationRow[];
     },
 
     getCursor() {

@@ -1,4 +1,4 @@
-# SafeSwap
+# inSync
 
 **Trustless in-person escrow for buying from a stranger on Marketplace/Craigslist —
 funds release only at the physical handoff.**
@@ -21,7 +21,7 @@ That exact combination is impossible with traditional rails:
 - **No trusted intermediary.** No platform holding the money, no dispute desk,
   no KYC'd shared account between people who just met.
 
-SafeSwap is **dispute-free by construction**: every outcome is a deterministic
+inSync is **dispute-free by construction**: every outcome is a deterministic
 on-chain rule or a mutual in-person signature — never a judge, jury, or AI.
 
 ## Architecture

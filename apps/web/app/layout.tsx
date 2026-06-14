@@ -7,7 +7,7 @@ import Nav from '@/components/Nav';
 const ESCROW = '0xaA2A7D734a1d10BB60e08fE306474687266cb38F';
 
 export const metadata: Metadata = {
-  title: 'SafeSwap — trustless in-person escrow',
+  title: 'inSync — trustless in-person escrow',
   description:
     'Buy from strangers safely: funds lock before anyone travels, and release only at the in-person handoff. Final, chargeback-free.',
 };
@@ -43,7 +43,7 @@ export default function RootLayout({
                 Contract ↗
               </a>
             </div>
-            <div className="mt-2">SafeSwap · trustless in-person trades, settled on Base.</div>
+            <div className="mt-2">inSync · trustless in-person trades, settled on Base.</div>
           </footer>
         </Providers>
       </body>

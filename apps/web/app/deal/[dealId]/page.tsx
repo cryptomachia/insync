@@ -31,6 +31,7 @@ import {
   canAgreeCancel,
 } from '@/lib/cancellation';
 import { ErrorNote, InfoNote, SuccessNote, errMsg } from '@/components/Notice';
+import MeetupCard from '@/components/MeetupCard';
 
 type Role = 'buyer' | 'seller' | 'observer';
 
@@ -179,6 +180,7 @@ export default function DealPage({
               disabled={!walletClient}
             />
           )}
+          <MeetupCard dealId={deal.dealId} role={role} />
         </>
       ) : (
         <InfoNote>

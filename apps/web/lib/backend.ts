@@ -16,7 +16,48 @@ export type BackendDeal = {
 
 // Off-chain listing metadata (item name, description, photo) keyed by on-chain listingId.
 // The contract only stores price/deposit/token/seller; the human details live here.
-export type ListingMeta = { title?: string; description?: string; image?: string };
+export type ListingMeta = {
+  title?: string;
+  description?: string;
+  image?: string;
+  meetAddress?: string | null;
+  meetLat?: number | null;
+  meetLng?: number | null;
+  sellerPhone?: string | null;
+};
+
+export type PartyCoordination = {
+  lat: number | null;
+  lng: number | null;
+  phone: string | null;
+  updatedAt: number;
+} | null;
+
+export type Coordination = { buyer: PartyCoordination; seller: PartyCoordination };
+
+/** Read both parties' live location/phone for a deal. */
+export async function getCoordination(dealId: bigint | string): Promise<Coordination> {
+  try {
+    const res = await fetch(`${BACKEND_URL}/deals/${dealId}/coordination`, { cache: 'no-store' });
+    if (!res.ok) return { buyer: null, seller: null };
+    return (await res.json()) as Coordination;
+  } catch {
+    return { buyer: null, seller: null };
+  }
+}
+
+/** Share my live location and/or phone for a deal, as buyer or seller. */
+export async function shareCoordination(
+  dealId: bigint | string,
+  role: 'buyer' | 'seller',
+  data: { lat?: number; lng?: number; phone?: string },
+): Promise<void> {
+  await fetch(`${BACKEND_URL}/deals/${dealId}/coordination`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ role, ...data }),
+  });
+}
 
 export async function saveListingMeta(
   listingId: bigint | string,

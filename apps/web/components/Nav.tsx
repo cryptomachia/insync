@@ -15,7 +15,7 @@ export default function Nav() {
           className="flex items-center gap-2 font-bold tracking-tight text-zinc-100"
         >
           <span className="text-xl">🤝</span>
-          <span>SafeSwap</span>
+          <span>inSync</span>
         </Link>
 
         <div className="flex items-center gap-2 text-sm">

@@ -1,4 +1,4 @@
-# SafeSwap — Live Demo Script (the win condition)
+# inSync — Live Demo Script (the win condition)
 
 Three paths, ~4 minutes total. Everything runs locally with `MOCK=true` (no
 third-party accounts); the same flows work against Base Sepolia by dropping real
@@ -20,7 +20,7 @@ make dev            # anvil + deploy + backend + web + CRE local keeper
 `make dev` echoes each step and prints:
 
 ```
-✓ SafeSwap is up:
+✓ inSync is up:
     web      http://127.0.0.1:3000
     backend  http://127.0.0.1:8787
     rpc      http://127.0.0.1:8545

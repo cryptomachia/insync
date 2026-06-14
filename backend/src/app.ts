@@ -140,16 +140,38 @@ export async function buildApp(opts: BuildAppOptions): Promise<FastifyInstance> 
   const MAX_DESC = 2000;
   const MAX_IMAGE = 2 * 1024 * 1024; // ~2 MiB base64 data URL
 
+  const MAX_ADDR = 200;
+  const serializeMeta = (m: ReturnType<typeof db.getListingMeta>) =>
+    m
+      ? {
+          title: m.title,
+          description: m.description,
+          image: m.image,
+          meetAddress: m.meet_address,
+          meetLat: m.meet_lat,
+          meetLng: m.meet_lng,
+          sellerPhone: m.seller_phone,
+        }
+      : null;
+
   app.get<{ Params: { id: string } }>('/listings/:id/meta', async (req, reply) => {
     if (!/^\d{1,78}$/.test(req.params.id)) {
       return reply.code(400).send({ error: 'invalid listing id' });
     }
-    return { meta: db.getListingMeta(BigInt(req.params.id)) ?? null };
+    return { meta: serializeMeta(db.getListingMeta(BigInt(req.params.id))) };
   });
 
   app.post<{
     Params: { id: string };
-    Body: { title?: string; description?: string; image?: string };
+    Body: {
+      title?: string;
+      description?: string;
+      image?: string;
+      meetAddress?: string;
+      meetLat?: number;
+      meetLng?: number;
+      sellerPhone?: string;
+    };
   }>('/listings/:id/meta', async (req, reply) => {
     if (!/^\d{1,78}$/.test(req.params.id)) {
       return reply.code(400).send({ error: 'invalid listing id' });
@@ -158,6 +180,14 @@ export async function buildApp(opts: BuildAppOptions): Promise<FastifyInstance> 
     const title = typeof b.title === 'string' ? b.title.slice(0, MAX_TITLE) : undefined;
     const description =
       typeof b.description === 'string' ? b.description.slice(0, MAX_DESC) : undefined;
+    const meetAddress =
+      typeof b.meetAddress === 'string' ? b.meetAddress.slice(0, MAX_ADDR) : undefined;
+    const sellerPhone =
+      typeof b.sellerPhone === 'string' ? b.sellerPhone.slice(0, 32) : undefined;
+    const meetLat =
+      typeof b.meetLat === 'number' && Math.abs(b.meetLat) <= 90 ? b.meetLat : undefined;
+    const meetLng =
+      typeof b.meetLng === 'number' && Math.abs(b.meetLng) <= 180 ? b.meetLng : undefined;
     let image: string | undefined;
     if (b.image != null && b.image !== '') {
       if (typeof b.image !== 'string' || b.image.length > MAX_IMAGE) {
@@ -168,7 +198,46 @@ export async function buildApp(opts: BuildAppOptions): Promise<FastifyInstance> 
       }
       image = b.image;
     }
-    db.upsertListingMeta(BigInt(req.params.id), { title, description, image });
+    db.upsertListingMeta(BigInt(req.params.id), {
+      title,
+      description,
+      image,
+      meetAddress,
+      meetLat,
+      meetLng,
+      sellerPhone,
+    });
+    return reply.code(201).send({ ok: true });
+  });
+
+  // ---- Live meetup coordination per deal (each party shares location/phone) ----
+  app.get<{ Params: { id: string } }>('/deals/:id/coordination', async (req, reply) => {
+    if (!/^\d{1,78}$/.test(req.params.id)) {
+      return reply.code(400).send({ error: 'invalid deal id' });
+    }
+    const rows = db.getCoordination(BigInt(req.params.id));
+    const by = (role: 'buyer' | 'seller') => {
+      const r = rows.find((x) => x.role === role);
+      return r ? { lat: r.lat, lng: r.lng, phone: r.phone, updatedAt: r.updated_at } : null;
+    };
+    return { buyer: by('buyer'), seller: by('seller') };
+  });
+
+  app.post<{
+    Params: { id: string };
+    Body: { role?: string; lat?: number; lng?: number; phone?: string };
+  }>('/deals/:id/coordination', async (req, reply) => {
+    if (!/^\d{1,78}$/.test(req.params.id)) {
+      return reply.code(400).send({ error: 'invalid deal id' });
+    }
+    const b = req.body ?? {};
+    if (b.role !== 'buyer' && b.role !== 'seller') {
+      return reply.code(400).send({ error: 'role must be "buyer" or "seller"' });
+    }
+    const lat = typeof b.lat === 'number' && Math.abs(b.lat) <= 90 ? b.lat : undefined;
+    const lng = typeof b.lng === 'number' && Math.abs(b.lng) <= 180 ? b.lng : undefined;
+    const phone = typeof b.phone === 'string' ? b.phone.slice(0, 32) : undefined;
+    db.upsertCoordination(BigInt(req.params.id), b.role, { lat, lng, phone });
     return reply.code(201).send({ ok: true });
   });
 
