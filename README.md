@@ -1,5 +1,7 @@
 # inSync
 
+![inSync — Lock it. Meet. Release.](apps/web/public/banner.png)
+
 **Trustless in-person escrow for buying from a stranger on Marketplace/Craigslist —
 funds release only at the physical handoff.**
 

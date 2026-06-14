@@ -10,6 +10,13 @@ const steps = [
 export default function Home() {
   return (
     <div className="space-y-7">
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src="/banner.png"
+        alt="inSync — Lock it. Meet. Release."
+        className="w-full rounded-2xl border border-white/10"
+      />
+
       <section className="space-y-3">
         <h1 className="text-3xl font-bold leading-tight">Buy from strangers, safely.</h1>
         <p className="text-zinc-400">

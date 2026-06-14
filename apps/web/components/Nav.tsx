@@ -14,7 +14,8 @@ export default function Nav() {
           href="/"
           className="flex items-center gap-2 font-bold tracking-tight text-zinc-100"
         >
-          <span className="text-xl">🤝</span>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/logo.png" alt="inSync" className="h-7 w-7 rounded-lg" />
           <span>inSync</span>
         </Link>
 
