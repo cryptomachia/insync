@@ -20,6 +20,9 @@ export interface IndexerOptions {
   fromBlock?: bigint;
   // Poll interval for http transports (ms). Ignored for ws.
   pollingInterval?: number;
+  // Optional structured logger (so progress is visible in hosts that only capture
+  // the app logger, not raw console.log).
+  log?: (obj: Record<string, unknown>, msg: string) => void;
 }
 
 export interface Indexer {
@@ -128,6 +131,7 @@ export function handleEvent(
 export function createIndexer(opts: IndexerOptions): Indexer {
   const { db, escrowAddress } = opts;
   const client = makeClient(opts.rpcUrl, opts.pollingInterval);
+  const log = opts.log ?? (() => {});
   const unwatchers: Array<() => void> = [];
 
   function applyLogs(logs: Log[]): void {
@@ -170,25 +174,40 @@ export function createIndexer(opts: IndexerOptions): Indexer {
   async function backfill(): Promise<void> {
     const cursor = db.getCursor();
     const head = await client.getBlockNumber();
-    // Resume from the cursor if we have one; otherwise from the configured deploy block
-    // (falling back to a recent window so we never scan from genesis).
     let from =
       cursor > 0n
         ? cursor + 1n
         : (opts.fromBlock ?? (head > MAX_RANGE ? head - MAX_RANGE : 0n));
-    while (from <= head) {
-      const to = from + MAX_RANGE - 1n > head ? head : from + MAX_RANGE - 1n;
+    log({ head: head.toString(), from: from.toString() }, 'indexer: backfill start');
+    let total = 0;
+    // If the RPC's numeric head lags behind our start block, fall back to a single
+    // open-ended scan (toBlock 'latest') so we still pick up historical events.
+    if (from > head) {
       const logs = await client.getContractEvents({
         abi: escrowAbi,
         address: escrowAddress,
         fromBlock: from,
-        toBlock: to,
+        toBlock: 'latest',
       });
+      total += (logs as unknown[]).length;
       applyLogs(logs as unknown as Log[]);
-      if (to > db.getCursor()) db.setCursor(to);
-      from = to + 1n;
+    } else {
+      while (from <= head) {
+        const to = from + MAX_RANGE - 1n > head ? head : from + MAX_RANGE - 1n;
+        const logs = await client.getContractEvents({
+          abi: escrowAbi,
+          address: escrowAddress,
+          fromBlock: from,
+          toBlock: to,
+        });
+        total += (logs as unknown[]).length;
+        applyLogs(logs as unknown as Log[]);
+        if (to > db.getCursor()) db.setCursor(to);
+        from = to + 1n;
+      }
     }
     if (head > db.getCursor()) db.setCursor(head);
+    log({ events: total, listings: db.getListings().length }, 'indexer: backfill done');
   }
 
   async function start(): Promise<void> {

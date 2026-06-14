@@ -28,16 +28,24 @@ async function main(): Promise<void> {
   const app = await buildApp({ db, logger: true, faucet });
 
   if (cfg.escrowAddress) {
+    app.log.info(
+      { escrow: cfg.escrowAddress, rpc: cfg.rpcUrl, fromBlock: String(cfg.indexerFromBlock) },
+      'starting indexer',
+    );
     const indexer = createIndexer({
       rpcUrl: cfg.rpcUrl,
       escrowAddress: cfg.escrowAddress,
       db,
       fromBlock: cfg.indexerFromBlock,
+      log: (obj, msg) => app.log.info(obj, msg),
     });
     // Don't crash the API if the chain is unreachable; log and keep serving.
-    indexer.start().catch((err) => {
-      app.log.error({ err: String(err) }, 'indexer failed to start; API continues serving');
-    });
+    indexer
+      .start()
+      .then(() => app.log.info('indexer started'))
+      .catch((err) => {
+        app.log.error({ err: String(err) }, 'indexer failed to start; API continues serving');
+      });
     const shutdown = () => {
       indexer.stop();
       db.close();
