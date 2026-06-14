@@ -50,3 +50,8 @@ test-results/
 # ---- Logs / OS ----
 *.log
 .DS_Store
+
+# sqlite sidecar files (runtime)
+*.db-shm
+*.db-wal
+*.db-journal
