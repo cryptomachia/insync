@@ -6,7 +6,7 @@ import { useAuth, useWalletClient } from '@handoff/auth';
 import { getAddresses } from '@handoff/contracts-abi';
 import { listItem } from '@/lib/tx';
 import { saveListingMeta } from '@/lib/backend';
-import { parseUsdToUsd1e8, fmtUsd1e8, depositUsd1e8, totalUsd1e8 } from '@/lib/format';
+import { parseUsdToUsd1e8, fmtUsd1e8, depositUsd1e8, totalUsd1e8, usd1e8ToUsdc } from '@/lib/format';
 import { ErrorNote, SuccessNote, InfoNote, errMsg } from '@/components/Notice';
 import ShareListing from '@/components/ShareListing';
 import MeetTimePicker from '@/components/MeetTimePicker';
@@ -16,6 +16,27 @@ const PROTECTION = [
   { bps: 0, label: 'None', sub: 'Easiest for buyers' },
   { bps: 1000, label: '10%', sub: 'Recommended' },
   { bps: 2000, label: '20%', sub: 'High-value items' },
+];
+
+// Seller-set cancellation timing policy (seconds). The buyer cannot change these — the contract
+// derives the deal's free-cancel window + expiry from the listing, so the deposit-at-risk binds.
+const FREE_CANCEL_OPTIONS = [
+  { sec: 0, label: 'No free window', sub: 'Strictest' },
+  { sec: 60 * 60, label: '1 hour', sub: 'Recommended' },
+  { sec: 24 * 60 * 60, label: '24 hours', sub: 'Most lenient' },
+];
+const EXPIRY_OPTIONS = [
+  { sec: 24 * 60 * 60, label: '1 day', sub: 'Default' },
+  { sec: 3 * 24 * 60 * 60, label: '3 days', sub: '' },
+  { sec: 7 * 24 * 60 * 60, label: '7 days', sub: '' },
+];
+
+// Seller no-show bond — your own stake, forfeited to the buyer if YOU don't show. Makes the
+// commitment symmetric (the buyer already posts a deposit). Expressed as % of price.
+const SELLER_BOND_OPTIONS = [
+  { bps: 0, label: 'None', sub: 'Less trust' },
+  { bps: 500, label: '5%', sub: '' },
+  { bps: 1000, label: '10%', sub: 'Recommended' },
 ];
 
 // Downscale + compress a chosen photo to a small JPEG data URL so it fits in one request.
@@ -53,6 +74,9 @@ export default function SellPage() {
   const [image, setImage] = useState<string | null>(null);
   const [priceStr, setPriceStr] = useState('');
   const [depositBps, setDepositBps] = useState(1000);
+  const [freeCancelWindow, setFreeCancelWindow] = useState(60 * 60); // 1h
+  const [dealTtl, setDealTtl] = useState(24 * 60 * 60); // 1 day
+  const [sellerBondBps, setSellerBondBps] = useState(1000); // 10% no-show bond
   const [meetAddress, setMeetAddress] = useState('');
   const [meetCoords, setMeetCoords] = useState<{ lat: number; lng: number } | null>(null);
   const [sellerPhone, setSellerPhone] = useState('');
@@ -74,6 +98,7 @@ export default function SellPage() {
   const priceUsd1e8 = useMemo(() => parseUsdToUsd1e8(priceStr), [priceStr]);
   const deposit = depositUsd1e8(priceUsd1e8, depositBps);
   const buyerPays = totalUsd1e8(priceUsd1e8, depositBps);
+  const sellerBond = depositUsd1e8(priceUsd1e8, sellerBondBps);
 
   async function handleFile(file: File | undefined) {
     if (!file) return;
@@ -127,7 +152,14 @@ export default function SellPage() {
 
     setBusy(true);
     try {
-      const id = await listItem(walletClient, { priceUsd1e8, depositBps, payToken });
+      const id = await listItem(walletClient, {
+        priceUsd1e8,
+        depositBps,
+        payToken,
+        freeCancelWindow: BigInt(freeCancelWindow),
+        dealTtl: BigInt(dealTtl),
+        bondAmount: usd1e8ToUsdc(sellerBond),
+      });
       // Save the human details (name/description/photo) off-chain, keyed by the listing id.
       try {
         await saveListingMeta(id, {
@@ -156,7 +188,7 @@ export default function SellPage() {
 
   if (!isConnected) {
     return (
-      <div className="space-y-4">
+      <div className="mx-auto max-w-2xl space-y-4">
         <h1 className="text-xl font-bold">Sell an item</h1>
         <InfoNote>Sign in to post a listing.</InfoNote>
         <button className="btn-primary" onClick={login}>
@@ -169,7 +201,7 @@ export default function SellPage() {
   // Success screen.
   if (listingId !== null) {
     return (
-      <div className="space-y-5">
+      <div className="mx-auto max-w-2xl space-y-5">
         <h1 className="text-xl font-bold">Listing posted 🎉</h1>
         {warn && <ErrorNote>{warn}</ErrorNote>}
         <SuccessNote>
@@ -215,8 +247,8 @@ export default function SellPage() {
   }
 
   return (
-    <div className="space-y-5">
-      <h1 className="text-xl font-bold">Sell an item</h1>
+    <div className="mx-auto max-w-2xl space-y-5">
+      <h1 className="text-2xl font-bold">Sell an item</h1>
 
       <div className="card space-y-5">
         {/* Photo */}
@@ -317,6 +349,74 @@ export default function SellPage() {
           </div>
         </div>
 
+        {/* Cancellation policy (seller-set timing) */}
+        <div>
+          <span className="label">Free-cancel window</span>
+          <p className="mb-2 text-xs text-zinc-500">
+            How long after the buyer pays they can still cancel for a full refund (deposit
+            included). After this, if you&apos;ve checked in, a buyer who bails forfeits the deposit.
+            You set this — the buyer can&apos;t change it.
+          </p>
+          <div className="grid grid-cols-3 gap-2">
+            {FREE_CANCEL_OPTIONS.map((o) => (
+              <button
+                key={o.sec}
+                type="button"
+                onClick={() => setFreeCancelWindow(o.sec)}
+                className={`choice ${freeCancelWindow === o.sec ? 'choice-on' : 'choice-off'}`}
+              >
+                <div>{o.label}</div>
+                <div className="mt-0.5 text-[10px] font-normal opacity-70">{o.sub}</div>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div>
+          <span className="label">Hold time before auto-refund</span>
+          <p className="mb-2 text-xs text-zinc-500">
+            If the meet never happens, the deal expires after this and the keeper refunds the buyer
+            (or releases your deposit if you checked in).
+          </p>
+          <div className="grid grid-cols-3 gap-2">
+            {EXPIRY_OPTIONS.map((o) => (
+              <button
+                key={o.sec}
+                type="button"
+                onClick={() => setDealTtl(o.sec)}
+                className={`choice ${dealTtl === o.sec ? 'choice-on' : 'choice-off'}`}
+              >
+                <div>{o.label}</div>
+                <div className="mt-0.5 text-[10px] font-normal opacity-70">{o.sub}</div>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Seller no-show bond */}
+        <div>
+          <span className="label">Your no-show bond</span>
+          <p className="mb-2 text-xs text-zinc-500">
+            You stake this yourself. You get it back on a completed (or cooperatively cancelled)
+            deal — but if <span className="font-medium text-zinc-300">you</span> don&apos;t show, it
+            goes to the buyer. It mirrors the buyer&apos;s deposit so flaking is penalized on both
+            sides.
+          </p>
+          <div className="grid grid-cols-3 gap-2">
+            {SELLER_BOND_OPTIONS.map((o) => (
+              <button
+                key={o.bps}
+                type="button"
+                onClick={() => setSellerBondBps(o.bps)}
+                className={`choice ${sellerBondBps === o.bps ? 'choice-on' : 'choice-off'}`}
+              >
+                <div>{o.label}</div>
+                <div className="mt-0.5 text-[10px] font-normal opacity-70">{o.sub}</div>
+              </button>
+            ))}
+          </div>
+        </div>
+
         {/* Where to meet */}
         <div>
           <span className="label">Where to meet</span>
@@ -399,6 +499,7 @@ export default function SellPage() {
           <Row k="Item price" v={priceUsd1e8 > 0n ? fmtUsd1e8(priceUsd1e8) : '—'} />
           <Row k="Buyer's deposit (refunded on completion)" v={fmtUsd1e8(deposit)} />
           <Row k="Buyer locks in total" v={priceUsd1e8 > 0n ? fmtUsd1e8(buyerPays) : '—'} bold />
+          <Row k="Your no-show bond (you stake; refunded on completion)" v={fmtUsd1e8(sellerBond)} />
         </div>
 
         {error && <ErrorNote>{error}</ErrorNote>}

@@ -20,8 +20,6 @@ import { escrowAbi, getAddresses, IS_MOCK } from '@handoff/contracts-abi';
 export type FundArgs = {
   listingId: bigint;
   tokenAmount: bigint;
-  freeCancelUntil: bigint;
-  expiry: bigint;
   walletClient: WalletClient;
 };
 
@@ -195,7 +193,7 @@ export function useFunding() {
       abi: escrowAbi,
       functionName: 'getListing',
       args: [args.listingId],
-    })) as readonly [Address, bigint, number, Address, boolean];
+    })) as readonly [Address, bigint, number, Address, boolean, bigint, bigint, bigint];
     const payToken = listing[3];
     const active = listing[4];
     if (!active) throw new Error('listing is not active');
@@ -251,7 +249,7 @@ export function useFunding() {
       address: escrow,
       abi: escrowAbi,
       functionName: 'fund',
-      args: [args.listingId, args.tokenAmount, args.freeCancelUntil, args.expiry],
+      args: [args.listingId, args.tokenAmount],
       account,
       chain: targetChain,
     });
@@ -294,8 +292,6 @@ export function FundButton(
       const dealId = await fund({
         listingId: props.listingId,
         tokenAmount: props.tokenAmount,
-        freeCancelUntil: props.freeCancelUntil,
-        expiry: props.expiry,
         walletClient: props.walletClient,
       });
       props.onFunded(dealId);

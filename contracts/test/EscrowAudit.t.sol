@@ -50,17 +50,18 @@ contract EscrowAuditTest is Test {
     // -----------------------------------------------------------------------------------------
 
     function _selfList() internal returns (uint256 listingId) {
-        vm.prank(seller);
-        listingId = escrow.list(PRICE, DEPOSIT_BPS, address(usdc));
+        return _selfList(0, 1 days);
     }
 
-    function _selfFund(uint256 listingId, uint64 freeCancelUntil, uint64 expiry)
-        internal
-        returns (uint256 dealId)
-    {
+    function _selfList(uint64 freeCancelWindow, uint64 dealTtl) internal returns (uint256 listingId) {
+        vm.prank(seller);
+        listingId = escrow.list(PRICE, DEPOSIT_BPS, address(usdc), freeCancelWindow, dealTtl, 0);
+    }
+
+    function _selfFund(uint256 listingId) internal returns (uint256 dealId) {
         vm.startPrank(seller); // seller funds their own listing (buyer == seller)
         usdc.approve(address(escrow), TOTAL_USDC);
-        dealId = escrow.fund(listingId, TOTAL_USDC, freeCancelUntil, expiry);
+        dealId = escrow.fund(listingId, TOTAL_USDC);
         vm.stopPrank();
     }
 
@@ -68,7 +69,7 @@ contract EscrowAuditTest is Test {
         escrow.setReputation(address(rep));
         uint256 listingId = _selfList();
         uint256 before = usdc.balanceOf(seller);
-        uint256 dealId = _selfFund(listingId, 0, uint64(block.timestamp + 1 days));
+        uint256 dealId = _selfFund(listingId);
 
         vm.prank(seller);
         escrow.confirmReceipt(dealId, "");
@@ -85,7 +86,7 @@ contract EscrowAuditTest is Test {
     function test_SelfDeal_AgreeCancel() public {
         uint256 listingId = _selfList();
         uint256 before = usdc.balanceOf(seller);
-        uint256 dealId = _selfFund(listingId, 0, uint64(block.timestamp + 1 days));
+        uint256 dealId = _selfFund(listingId);
         vm.prank(seller);
         escrow.agreeCancel(dealId);
         assertEq(usdc.balanceOf(seller), before);
@@ -93,10 +94,10 @@ contract EscrowAuditTest is Test {
     }
 
     function test_SelfDeal_BuyerCancel_Forfeit() public {
-        uint256 listingId = _selfList();
-        uint256 before = usdc.balanceOf(seller);
         uint64 freeCancelUntil = uint64(block.timestamp + 1 hours);
-        uint256 dealId = _selfFund(listingId, freeCancelUntil, uint64(block.timestamp + 1 days));
+        uint256 listingId = _selfList(1 hours, 1 days);
+        uint256 before = usdc.balanceOf(seller);
+        uint256 dealId = _selfFund(listingId);
 
         vm.prank(seller);
         escrow.checkIn(dealId);
@@ -114,7 +115,7 @@ contract EscrowAuditTest is Test {
         uint256 listingId = _selfList();
         uint256 before = usdc.balanceOf(seller);
         uint64 expiry = uint64(block.timestamp + 1 days);
-        uint256 dealId = _selfFund(listingId, 0, expiry);
+        uint256 dealId = _selfFund(listingId);
         vm.prank(seller);
         escrow.checkIn(dealId);
         vm.warp(expiry);
@@ -136,13 +137,13 @@ contract EscrowAuditTest is Test {
         fee.mint(buyer, 1_000_000000);
 
         vm.prank(seller);
-        uint256 listingId = feeEscrow.list(PRICE, DEPOSIT_BPS, address(fee));
+        uint256 listingId = feeEscrow.list(PRICE, DEPOSIT_BPS, address(fee), 0, uint64(1 days), 0);
 
         // Send 90 USDC; 1% fee burned → escrow receives 89.1 USDC (>= 88 required).
         uint256 sent = 90_000000;
         vm.startPrank(buyer);
         fee.approve(address(feeEscrow), sent);
-        uint256 dealId = feeEscrow.fund(listingId, sent, 0, uint64(block.timestamp + 1 days));
+        uint256 dealId = feeEscrow.fund(listingId, sent);
         vm.stopPrank();
 
         uint256 received = fee.balanceOf(address(feeEscrow));
@@ -164,14 +165,14 @@ contract EscrowAuditTest is Test {
         fee.mint(buyer, 1_000_000000);
 
         vm.prank(seller);
-        uint256 listingId = feeEscrow.list(PRICE, DEPOSIT_BPS, address(fee));
+        uint256 listingId = feeEscrow.list(PRICE, DEPOSIT_BPS, address(fee), 0, uint64(1 days), 0);
 
         // Send exactly 88; 5% fee → only 83.6 received < 88 required → revert against RECEIVED.
         vm.startPrank(buyer);
         fee.approve(address(feeEscrow), TOTAL_USDC);
         uint256 received = TOTAL_USDC - (TOTAL_USDC * 500) / 10_000;
         vm.expectRevert(abi.encodeWithSelector(Escrow.InsufficientFunding.selector, TOTAL_USDC, received));
-        feeEscrow.fund(listingId, TOTAL_USDC, 0, uint64(block.timestamp + 1 days));
+        feeEscrow.fund(listingId, TOTAL_USDC);
         vm.stopPrank();
     }
 
@@ -185,11 +186,11 @@ contract EscrowAuditTest is Test {
         int256 priceMove = int256(bound(settlePrice, 500e8, 20000e8));
 
         vm.prank(seller);
-        uint256 listingId = escrow.list(PRICE, DEPOSIT_BPS, address(weth));
+        uint256 listingId = escrow.list(PRICE, DEPOSIT_BPS, address(weth), 0, uint64(1 days), 0);
 
         vm.startPrank(buyer);
         weth.approve(address(escrow), funded);
-        uint256 dealId = escrow.fund(listingId, funded, 0, uint64(block.timestamp + 1 days));
+        uint256 dealId = escrow.fund(listingId, funded);
         vm.stopPrank();
 
         uint256 held = weth.balanceOf(address(escrow));
@@ -210,13 +211,13 @@ contract EscrowAuditTest is Test {
         funded = bound(funded, 1, 50e18);
         settlePrice = bound(settlePrice, 500e8, 20000e8);
 
-        vm.prank(seller);
-        uint256 listingId = escrow.list(PRICE, DEPOSIT_BPS, address(weth));
-
         uint64 freeCancelUntil = uint64(block.timestamp + 1 hours);
+        vm.prank(seller);
+        uint256 listingId = escrow.list(PRICE, DEPOSIT_BPS, address(weth), 1 hours, 1 days, 0);
+
         vm.startPrank(buyer);
         weth.approve(address(escrow), funded);
-        uint256 dealId = escrow.fund(listingId, funded, freeCancelUntil, uint64(block.timestamp + 1 days));
+        uint256 dealId = escrow.fund(listingId, funded);
         vm.stopPrank();
 
         vm.prank(seller);

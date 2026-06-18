@@ -122,6 +122,11 @@ export function handleEvent(
       mark(a.dealId as bigint);
       break;
 
+    case 'ListingCancelled':
+      // Seller withdrew an unfunded listing (bond refunded on-chain) → drop it from browse.
+      db.setListingActive(a.listingId as bigint, false);
+      break;
+
     default:
       // Unknown event — ignore.
       break;
@@ -210,27 +215,35 @@ export function createIndexer(opts: IndexerOptions): Indexer {
     log({ events: total, listings: db.getListings().length }, 'indexer: backfill done');
   }
 
+  // Poll for new events by re-running the getLogs-based backfill on an interval. Public RPCs
+  // routinely drop eth_getFilter subscriptions ("filter not found"), so we avoid watchContractEvent
+  // entirely — getLogs is reliable everywhere and recordEventOnce keeps re-scans idempotent.
+  let pollTimer: ReturnType<typeof setInterval> | null = null;
+
   async function start(): Promise<void> {
     await backfill();
-    const unwatch = client.watchContractEvent({
-      abi: escrowAbi,
-      address: escrowAddress,
-      onLogs: (logs) => applyLogs(logs as unknown as Log[]),
-      onError: (err) =>
-        console.error(JSON.stringify({ kind: 'indexer_watch_error', error: String(err) })),
-    });
-    unwatchers.push(unwatch);
+    const every = opts.pollingInterval ?? 5_000;
+    pollTimer = setInterval(() => {
+      backfill().catch((err) =>
+        console.error(JSON.stringify({ kind: 'indexer_poll_error', error: String(err) })),
+      );
+    }, every);
     console.log(
       JSON.stringify({
         kind: 'indexer_started',
         escrow: escrowAddress,
         rpc: opts.rpcUrl,
         cursor: db.getCursor().toString(),
+        pollMs: every,
       }),
     );
   }
 
   function stop(): void {
+    if (pollTimer) {
+      clearInterval(pollTimer);
+      pollTimer = null;
+    }
     for (const u of unwatchers.splice(0)) u();
   }
 

@@ -33,7 +33,7 @@ import {
 } from '@/lib/cancellation';
 import { ErrorNote, InfoNote, SuccessNote, errMsg } from '@/components/Notice';
 import MeetupCard from '@/components/MeetupCard';
-import { getDealEvents, type DealEvent } from '@/lib/backend';
+import { TrackerStepper, ChatTimeline, BoardingPassQR, ReleaseTap } from '@/components/designs';
 
 type Role = 'buyer' | 'seller' | 'observer';
 
@@ -116,86 +116,89 @@ export default function DealPage({
     }
   }
 
+  const terminal = isTerminal(deal.state);
+
   return (
-    <div className="space-y-5">
+    <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-xl font-bold">Deal #{dealId}</h1>
+        <h1 className="text-2xl font-bold">Deal #{dealId}</h1>
         <StatePill state={deal.state} />
       </div>
 
-      <div className="card space-y-1 text-sm">
-        <KV k="Your role" v={roleLabel} />
-        <KV k="Buyer" v={shortAddr(deal.buyer)} mono />
-        <KV k="Seller" v={shortAddr(deal.seller)} mono />
-        <KV k="Item price" v={fmtUsd1e8(deal.priceUsd1e8)} />
-        <KV k="Deposit" v={fmtUsd1e8(deposit)} />
-        <KV
-          k="Seller checked in"
-          v={deal.sellerCheckedIn ? 'yes ✓' : 'not yet'}
-        />
-        <KV
-          k="Free-cancel window"
-          v={inFreeWindow(deal) ? 'open' : 'closed'}
-        />
-        {!stable && <KV k="Pay token" v="volatile (Data Streams priced)" />}
+      <div className="grid gap-6 lg:grid-cols-[1.3fr_1fr]">
+        {/* Left: context */}
+        <div className="space-y-5">
+          <div className="card space-y-1 text-sm">
+            <KV k="Your role" v={roleLabel} />
+            <KV k="Buyer" v={shortAddr(deal.buyer)} mono />
+            <KV k="Seller" v={shortAddr(deal.seller)} mono />
+            <KV k="Item price" v={fmtUsd1e8(deal.priceUsd1e8)} />
+            <KV k="Deposit" v={fmtUsd1e8(deposit)} />
+            <KV k="Seller checked in" v={deal.sellerCheckedIn ? 'yes ✓' : 'not yet'} />
+            <KV k="Free-cancel window" v={inFreeWindow(deal) ? 'open' : 'closed'} />
+            {!stable && <KV k="Pay token" v="volatile (Data Streams priced)" />}
+          </div>
+
+          <TrackerStepper deal={deal} />
+          <ChatTimeline deal={deal} />
+          {!terminal && (isSeller || isBuyer) && <MeetupCard dealId={deal.dealId} role={role} />}
+        </div>
+
+        {/* Right: actions */}
+        <div className="space-y-4 lg:sticky lg:top-24 lg:self-start">
+          {flash && <SuccessNote>{flash}</SuccessNote>}
+          {actionErr && <ErrorNote>{actionErr}</ErrorNote>}
+
+          {terminal ? (
+            <>
+              <TerminalCard deal={deal} />
+              <Link href={`/deal/${dealId}/receipt`} className="btn-secondary">
+                View receipt ↗
+              </Link>
+            </>
+          ) : isSeller || isBuyer ? (
+            <>
+              {isSeller && (
+                <SellerActions
+                  deal={deal}
+                  busy={busy}
+                  onCheckIn={() =>
+                    run('checkIn', () => checkIn(walletClient!, deal.dealId), 'Checked in. Show the QR to the buyer.')
+                  }
+                  onAgreeCancel={() =>
+                    run('agreeCancel', () => agreeCancel(walletClient!, deal.dealId), 'Cancel agreed — buyer fully refunded.')
+                  }
+                  disabled={!walletClient}
+                />
+              )}
+              {isBuyer && (
+                <BuyerActions
+                  deal={deal}
+                  busy={busy}
+                  stable={stable}
+                  onConfirm={() =>
+                    run(
+                      'confirm',
+                      () => confirmReceipt(walletClient!, deal.dealId, deal.payToken),
+                      'Released! Seller paid, deposit returned to you.',
+                    )
+                  }
+                  onBuyerCancel={() =>
+                    run(
+                      'buyerCancel',
+                      () => buyerCancel(walletClient!, deal.dealId, deal.payToken),
+                      'Cancelled.',
+                    )
+                  }
+                  disabled={!walletClient}
+                />
+              )}
+            </>
+          ) : (
+            <InfoNote>You are viewing this deal. Connect as the buyer or seller to act.</InfoNote>
+          )}
+        </div>
       </div>
-
-      <Timeline deal={deal} />
-
-      {flash && <SuccessNote>{flash}</SuccessNote>}
-      {actionErr && <ErrorNote>{actionErr}</ErrorNote>}
-
-      {isTerminal(deal.state) ? (
-        <>
-          <TerminalCard deal={deal} />
-          <Link href={`/deal/${dealId}/receipt`} className="btn-secondary">
-            View receipt ↗
-          </Link>
-        </>
-      ) : isSeller || isBuyer ? (
-        <>
-          {isSeller && (
-            <SellerActions
-              deal={deal}
-              busy={busy}
-              onCheckIn={() =>
-                run('checkIn', () => checkIn(walletClient!, deal.dealId), 'Checked in. Show the QR to the buyer.')
-              }
-              onAgreeCancel={() =>
-                run('agreeCancel', () => agreeCancel(walletClient!, deal.dealId), 'Cancel agreed — buyer fully refunded.')
-              }
-              disabled={!walletClient}
-            />
-          )}
-          {isBuyer && (
-            <BuyerActions
-              deal={deal}
-              busy={busy}
-              stable={stable}
-              onConfirm={() =>
-                run(
-                  'confirm',
-                  () => confirmReceipt(walletClient!, deal.dealId, deal.payToken),
-                  'Released! Seller paid, deposit returned to you.',
-                )
-              }
-              onBuyerCancel={() =>
-                run(
-                  'buyerCancel',
-                  () => buyerCancel(walletClient!, deal.dealId, deal.payToken),
-                  'Cancelled.',
-                )
-              }
-              disabled={!walletClient}
-            />
-          )}
-          <MeetupCard dealId={deal.dealId} role={role} />
-        </>
-      ) : (
-        <InfoNote>
-          You are viewing this deal. Connect as the buyer or seller to act.
-        </InfoNote>
-      )}
     </div>
   );
 }
@@ -238,13 +241,13 @@ function SellerActions({
         ) : (
           <>
             <SuccessNote>
-              You&apos;re checked in. Show this one-time QR to the buyer to release
+              You&apos;re checked in. Show this one-time pass to the buyer to release
               payment.
             </SuccessNote>
-            {/* Seller-side QR from @handoff/qr (paste fallback in stub). */}
-            <div className="rounded-xl border border-slate-200 bg-white p-3">
+            {/* Seller-side QR from @handoff/qr, framed as a boarding pass (#1). */}
+            <BoardingPassQR deal={deal}>
               <ReleaseQR dealId={deal.dealId} />
-            </div>
+            </BoardingPassQR>
           </>
         )}
       </div>
@@ -326,13 +329,7 @@ function BuyerActions({
             {scanErr && <ErrorNote>{scanErr}</ErrorNote>}
           </>
         ) : (
-          <button
-            className="btn-primary"
-            disabled={disabled || busy === 'confirm'}
-            onClick={onConfirm}
-          >
-            {busy === 'confirm' ? 'Releasing…' : 'Confirm receipt'}
-          </button>
+          <ReleaseTap onConfirm={onConfirm} busy={busy === 'confirm'} disabled={disabled} />
         )}
       </div>
 
@@ -367,79 +364,6 @@ function TerminalCard({ deal }: { deal: Deal }) {
     <SuccessNote>{m.title}</SuccessNote>
   ) : (
     <InfoNote>{m.title}</InfoNote>
-  );
-}
-
-// Timeline
-function fmtTime(ms?: number): string {
-  if (!ms) return '';
-  return new Date(ms).toLocaleString(undefined, {
-    month: 'short',
-    day: 'numeric',
-    hour: 'numeric',
-    minute: '2-digit',
-  });
-}
-
-function Timeline({ deal }: { deal: Deal }) {
-  const [events, setEvents] = useState<DealEvent[]>([]);
-
-  useEffect(() => {
-    let alive = true;
-    const load = () =>
-      getDealEvents(deal.dealId)
-        .then((e) => alive && setEvents(e))
-        .catch(() => {});
-    load();
-    const t = setInterval(load, 8000);
-    return () => {
-      alive = false;
-      clearInterval(t);
-    };
-  }, [deal.dealId]);
-
-  const at = (name: string) => events.find((e) => e.event === name)?.createdAt;
-  const checkedIn = deal.sellerCheckedIn || !!at('CheckedIn');
-  const terminal =
-    deal.state === DealState.Completed
-      ? { name: 'Completed', label: 'Released — seller paid' }
-      : deal.state === DealState.Refunded
-      ? { name: 'Refunded', label: 'Refunded to buyer' }
-      : deal.state === DealState.Forfeited
-      ? { name: 'Forfeited', label: 'Deposit forfeited to seller' }
-      : null;
-
-  const steps = [
-    { label: 'Payment locked', done: true, time: at('Funded') },
-    { label: 'Seller checked in', done: checkedIn, time: at('CheckedIn') },
-    {
-      label: terminal?.label ?? 'Released at the handoff',
-      done: !!terminal,
-      time: terminal ? at(terminal.name) : undefined,
-    },
-  ];
-
-  return (
-    <div className="card">
-      <div className="mb-3 text-xs font-semibold uppercase tracking-wider text-zinc-500">Progress</div>
-      <ol className="space-y-3">
-        {steps.map((s, i) => (
-          <li key={i} className="flex items-start gap-3">
-            <span
-              className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[11px] ${
-                s.done ? 'bg-emerald-500/20 text-emerald-300' : 'bg-white/5 text-zinc-600'
-              }`}
-            >
-              {s.done ? '✓' : i + 1}
-            </span>
-            <div className="min-w-0">
-              <div className={s.done ? 'text-sm text-zinc-100' : 'text-sm text-zinc-500'}>{s.label}</div>
-              {s.time && <div className="text-xs text-zinc-500">{fmtTime(s.time)}</div>}
-            </div>
-          </li>
-        ))}
-      </ol>
-    </div>
   );
 }
 

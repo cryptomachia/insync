@@ -31,11 +31,11 @@ contract EscrowReentrancyTest is Test {
 
     function test_ConfirmReceipt_ReentrancyBlocked() public {
         vm.prank(seller);
-        uint256 listingId = escrow.list(PRICE, DEPOSIT_BPS, address(token));
+        uint256 listingId = escrow.list(PRICE, DEPOSIT_BPS, address(token), 0, uint64(1 days), 0);
 
         vm.startPrank(buyer);
         token.approve(address(escrow), TOTAL);
-        uint256 dealId = escrow.fund(listingId, TOTAL, 0, uint64(block.timestamp + 1 days));
+        uint256 dealId = escrow.fund(listingId, TOTAL);
         vm.stopPrank();
 
         // Arm the token to re-enter on the first transfer FROM the escrow.

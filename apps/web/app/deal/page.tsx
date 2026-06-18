@@ -8,8 +8,8 @@ export default function DealIndexPage() {
   const [id, setId] = useState('');
 
   return (
-    <div className="space-y-5">
-      <h1 className="text-xl font-bold">Open a deal</h1>
+    <div className="mx-auto max-w-2xl space-y-5">
+      <h1 className="text-2xl font-bold">Open a deal</h1>
       <div className="card space-y-3">
         <label className="label" htmlFor="deal">
           Deal #

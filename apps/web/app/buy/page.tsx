@@ -36,10 +36,10 @@ export default function BuyIndexPage() {
 
   return (
     <div className="space-y-5">
-      <h1 className="text-xl font-bold">Browse items</h1>
+      <h1 className="text-2xl font-bold">Browse items</h1>
 
       <input
-        className="input"
+        className="input max-w-md"
         value={q}
         onChange={(e) => setQ(e.target.value)}
         placeholder="Search items or meet area…"
@@ -59,7 +59,7 @@ export default function BuyIndexPage() {
           )}
         </InfoNote>
       ) : (
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
           {filtered.map((l) => (
             <Link
               key={l.listingId}
@@ -85,7 +85,7 @@ export default function BuyIndexPage() {
         </div>
       )}
 
-      <details className="card">
+      <details className="card max-w-md">
         <summary className="cursor-pointer text-sm font-medium text-zinc-300">
           Have a listing link or number?
         </summary>

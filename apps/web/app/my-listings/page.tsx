@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
-import { useAuth } from '@handoff/auth';
+import { useAuth, useWalletClient } from '@handoff/auth';
 import {
   getMyListings,
   getListingMeta,
@@ -10,6 +10,7 @@ import {
   type SellerListing,
   type ListingMeta,
 } from '@/lib/backend';
+import { cancelListing } from '@/lib/tx';
 import { shortAddr } from '@/lib/format';
 import { ErrorNote, InfoNote, errMsg } from '@/components/Notice';
 import MeetTimePicker from '@/components/MeetTimePicker';
@@ -39,7 +40,7 @@ export default function MyListingsPage() {
 
   if (!isConnected) {
     return (
-      <div className="space-y-4">
+      <div className="mx-auto max-w-2xl space-y-4">
         <h1 className="text-xl font-bold">My listings</h1>
         <InfoNote>Sign in to manage the items you&apos;re selling.</InfoNote>
         <button className="btn-primary" onClick={login}>
@@ -53,9 +54,9 @@ export default function MyListingsPage() {
   const archived = listings?.filter((l) => l.archived) ?? [];
 
   return (
-    <div className="space-y-5">
+    <div className="mx-auto max-w-2xl space-y-5">
       <div className="flex items-center justify-between">
-        <h1 className="text-xl font-bold">My listings</h1>
+        <h1 className="text-2xl font-bold">My listings</h1>
         <button className="btn-secondary !w-auto px-3 py-1.5 text-sm" onClick={load} disabled={loading}>
           {loading ? 'Refreshing…' : 'Refresh'}
         </button>
@@ -102,9 +103,26 @@ export default function MyListingsPage() {
 
 function ListingCard({ listing, onChanged }: { listing: SellerListing; onChanged: () => void }) {
   const id = listing.listingId;
+  const walletClient = useWalletClient();
   const [editing, setEditing] = useState(false);
   const [copied, setCopied] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
+  const [chainErr, setChainErr] = useState<string | null>(null);
+
+  async function delistOnChain() {
+    if (!walletClient) return setChainErr('Sign in to delist on-chain.');
+    setBusy('delist');
+    setChainErr(null);
+    try {
+      await cancelListing(walletClient, BigInt(id)); // refunds the no-show bond, deactivates on-chain
+      await saveListingMeta(id, { archived: true });
+      onChanged();
+    } catch (e) {
+      setChainErr(errMsg(e));
+    } finally {
+      setBusy(null);
+    }
+  }
 
   async function copyLink() {
     const url = `${window.location.origin}/buy/${id}`;
@@ -168,15 +186,27 @@ function ListingCard({ listing, onChanged }: { listing: SellerListing; onChanged
             Relist
           </button>
         ) : (
-          <button
-            className="!w-auto rounded-xl border border-rose-500/30 bg-rose-500/10 px-3 py-1.5 text-sm font-medium text-rose-300 hover:bg-rose-500/20"
-            onClick={() => toggleArchived(true)}
-            disabled={busy === 'archive'}
-          >
-            Withdraw
-          </button>
+          <>
+            <button
+              className="!w-auto rounded-xl border border-rose-500/30 bg-rose-500/10 px-3 py-1.5 text-sm font-medium text-rose-300 hover:bg-rose-500/20"
+              onClick={delistOnChain}
+              disabled={busy === 'delist'}
+              title="Withdraw on-chain and get your no-show bond back (only before it's funded)"
+            >
+              {busy === 'delist' ? 'Delisting…' : 'Delist & refund bond'}
+            </button>
+            <button
+              className="btn-secondary !w-auto px-3 py-1.5 text-sm"
+              onClick={() => toggleArchived(true)}
+              disabled={busy === 'archive'}
+              title="Just hide it from buyers (off-chain)"
+            >
+              Hide
+            </button>
+          </>
         )}
       </div>
+      {chainErr && <ErrorNote>{chainErr}</ErrorNote>}
 
       {editing && (
         <EditForm

@@ -75,7 +75,7 @@ export default function ReceiptPage({ params }: { params: { dealId: string } }) 
 
   if (err) {
     return (
-      <div className="space-y-4">
+      <div className="mx-auto max-w-2xl space-y-4">
         <h1 className="text-xl font-bold">Receipt</h1>
         <ErrorNote>{err}</ErrorNote>
         <Link href="/trade-history" className="btn-secondary">
@@ -112,7 +112,7 @@ export default function ReceiptPage({ params }: { params: { dealId: string } }) 
   ];
 
   return (
-    <div className="space-y-5">
+    <div className="mx-auto max-w-2xl space-y-5">
       <div className="flex items-center justify-between">
         <h1 className="text-xl font-bold">Receipt</h1>
         <button className="btn-secondary !w-auto px-3 py-1.5 text-sm print:hidden" onClick={() => window.print()}>

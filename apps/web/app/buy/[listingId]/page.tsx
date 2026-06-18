@@ -16,11 +16,20 @@ import {
   shortAddr,
 } from '@/lib/format';
 import { policyText } from '@/lib/cancellation';
+import { VaultLock } from '@/components/designs';
 import { ErrorNote, InfoNote, SuccessNote, errMsg } from '@/components/Notice';
 
-const FREE_CANCEL_WINDOW = 60 * 60; // 1h free-cancel window
-const EXPIRY_WINDOW = 24 * 60 * 60; // 24h until the keeper can reclaim
 const VOLATILE_BUFFER_BPS = 2000; // +20% buffer for volatile tokens
+
+// Humanize a seconds duration for the seller's cancellation policy (e.g. 3600 -> "1 hour").
+function fmtDuration(seconds: bigint): string {
+  const s = Number(seconds);
+  if (s <= 0) return 'none';
+  if (s % 86400 === 0) return `${s / 86400} day${s / 86400 === 1 ? '' : 's'}`;
+  if (s % 3600 === 0) return `${s / 3600} hour${s / 3600 === 1 ? '' : 's'}`;
+  if (s % 60 === 0) return `${s / 60} min`;
+  return `${s}s`;
+}
 
 export default function BuyListingPage({ params }: { params: { listingId: string } }) {
   const { listingId } = params;
@@ -73,15 +82,15 @@ export default function BuyListingPage({ params }: { params: { listingId: string
 
   if (loadErr) {
     return (
-      <div className="space-y-4">
+      <div className="mx-auto max-w-2xl space-y-4">
         <h1 className="text-xl font-bold">Listing</h1>
         <ErrorNote>{loadErr}</ErrorNote>
-        <Link href="/buy" className="btn-secondary">Back</Link>
+        <Link href="/buy" className="btn-secondary !w-auto px-4">Back</Link>
       </div>
     );
   }
   if (!listing) {
-    return <div className="py-10 text-center text-zinc-500">Loading listing…</div>;
+    return <div className="py-16 text-center text-zinc-500">Loading listing…</div>;
   }
 
   const deposit = depositUsd1e8(listing.priceUsd1e8, listing.depositBps);
@@ -92,7 +101,7 @@ export default function BuyListingPage({ params }: { params: { listingId: string
   // Funded — "safe to meet" confirmation the seller can verify.
   if (dealId !== null) {
     return (
-      <div className="space-y-5">
+      <div className="mx-auto max-w-2xl space-y-5">
         <h1 className="text-xl font-bold">You&apos;re in 🔒</h1>
         <SuccessNote>
           <div className="space-y-1">
@@ -109,109 +118,126 @@ export default function BuyListingPage({ params }: { params: { listingId: string
   }
 
   return (
-    <div className="space-y-5">
-      {meta?.image && (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img src={meta.image} alt={title} className="aspect-video w-full rounded-2xl object-cover" />
-      )}
+    <div className="grid gap-8 lg:grid-cols-[1.4fr_1fr]">
+      {/* Left: the item */}
+      <div className="space-y-5">
+        {meta?.image && (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={meta.image} alt={title} className="aspect-video w-full rounded-2xl border border-white/10 object-cover" />
+        )}
 
-      <div className="space-y-1">
-        <h1 className="text-2xl font-bold leading-tight">{title}</h1>
-        <div className="flex items-baseline gap-2">
-          <span className="text-2xl font-bold text-indigo-300">{fmtUsd1e8(listing.priceUsd1e8)}</span>
-          <span className="pill bg-white/10 text-zinc-300">{stable ? 'USDC' : 'volatile token'}</span>
+        <div className="space-y-1">
+          <h1 className="text-3xl font-bold leading-tight">{title}</h1>
+          <div className="flex items-baseline gap-2">
+            <span className="text-3xl font-bold text-indigo-300">{fmtUsd1e8(listing.priceUsd1e8)}</span>
+            <span className="pill bg-white/10 text-zinc-300">{stable ? 'USDC' : 'volatile token'}</span>
+          </div>
+          <div className="text-sm text-zinc-500">Sold by {shortAddr(listing.seller)}</div>
         </div>
-        <div className="text-sm text-zinc-500">Sold by {shortAddr(listing.seller)}</div>
-      </div>
 
-      {meta?.description && (
-        <p className="whitespace-pre-wrap text-sm text-zinc-300">{meta.description}</p>
-      )}
+        {meta?.description && (
+          <p className="whitespace-pre-wrap text-sm text-zinc-300">{meta.description}</p>
+        )}
 
-      {!listing.active && <ErrorNote>This listing is no longer available.</ErrorNote>}
-      {meta?.archived && (
-        <ErrorNote>The seller has withdrawn this listing — please check with them before paying.</ErrorNote>
-      )}
-
-      <div className="card space-y-3">
-        <div className="font-semibold">What you&apos;ll pay</div>
-        <div className="surface space-y-1 text-sm">
-          <Row k="Item price (refundable until you confirm)" v={fmtUsd1e8(listing.priceUsd1e8)} />
-          <Row k="Refundable deposit" v={fmtUsd1e8(deposit)} />
-          <Row
-            k={stable ? 'You lock now' : 'You lock now (incl. price buffer)'}
-            v={tokenAmount === null ? '…' : stable ? `${fmtUsd1e8(total)} USDC` : `~${fmtUsd1e8(total)}`}
-            bold
-          />
-        </div>
-        <p className="text-xs text-zinc-400">{policyText(listing.priceUsd1e8, listing.depositBps)}</p>
-        {!stable && (
-          <InfoNote>
-            You&apos;re paying with a price-variable token; at release it&apos;s priced live so the
-            seller gets exactly {fmtUsd1e8(listing.priceUsd1e8)} and any extra comes back to you.
-          </InfoNote>
+        {(meta?.meetAddress ||
+          meta?.meetLat != null ||
+          meta?.meetTime ||
+          meta?.notes ||
+          meta?.sellerPhone ||
+          meta?.sellerEmail) && (
+          <div className="card space-y-2">
+            <div className="font-semibold">Meetup details</div>
+            {meta?.meetAddress && <div className="surface text-sm text-zinc-200">📍 {meta.meetAddress}</div>}
+            {meta?.meetTime && <div className="text-sm text-zinc-300">🕒 {meta.meetTime}</div>}
+            {meta?.meetLat != null && meta?.meetLng != null && (
+              <>
+                <iframe
+                  title="meet location"
+                  src={`https://maps.google.com/maps?q=${meta.meetLat},${meta.meetLng}&z=15&output=embed`}
+                  className="h-48 w-full rounded-xl border border-white/10"
+                  loading="lazy"
+                />
+                <a
+                  className="btn-secondary"
+                  href={`https://www.google.com/maps?q=${meta.meetLat},${meta.meetLng}`}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  Open in Google Maps ↗
+                </a>
+              </>
+            )}
+            {meta?.notes && (
+              <div className="surface text-sm text-zinc-300">
+                <span className="text-zinc-500">Seller&apos;s note:</span> {meta.notes}
+              </div>
+            )}
+            {meta?.sellerPhone && (
+              <a className="btn-secondary" href={`tel:${meta.sellerPhone}`}>📞 Seller · {meta.sellerPhone}</a>
+            )}
+            {meta?.sellerEmail && (
+              <a className="btn-secondary" href={`mailto:${meta.sellerEmail}`}>✉️ {meta.sellerEmail}</a>
+            )}
+            <p className="text-xs text-zinc-500">
+              You&apos;ll get the seller&apos;s live location + full contact after you lock payment.
+            </p>
+          </div>
         )}
       </div>
 
-      {(meta?.meetAddress ||
-        meta?.meetLat != null ||
-        meta?.meetTime ||
-        meta?.notes ||
-        meta?.sellerPhone ||
-        meta?.sellerEmail) && (
-        <div className="card space-y-2">
-          <div className="font-semibold">Meetup details</div>
-          {meta?.meetAddress && <div className="surface text-sm text-zinc-200">📍 {meta.meetAddress}</div>}
-          {meta?.meetTime && <div className="text-sm text-zinc-300">🕒 {meta.meetTime}</div>}
-          {meta?.meetLat != null && meta?.meetLng != null && (
-            <>
-              <iframe
-                title="meet location"
-                src={`https://maps.google.com/maps?q=${meta.meetLat},${meta.meetLng}&z=15&output=embed`}
-                className="h-40 w-full rounded-xl border border-white/10"
-                loading="lazy"
-              />
-              <a
-                className="btn-secondary"
-                href={`https://www.google.com/maps?q=${meta.meetLat},${meta.meetLng}`}
-                target="_blank"
-                rel="noreferrer"
-              >
-                Open in Google Maps ↗
-              </a>
-            </>
-          )}
-          {meta?.notes && (
-            <div className="surface text-sm text-zinc-300">
-              <span className="text-zinc-500">Seller&apos;s note:</span> {meta.notes}
-            </div>
-          )}
-          {meta?.sellerPhone && (
-            <a className="btn-secondary" href={`tel:${meta.sellerPhone}`}>📞 Seller · {meta.sellerPhone}</a>
-          )}
-          {meta?.sellerEmail && (
-            <a className="btn-secondary" href={`mailto:${meta.sellerEmail}`}>✉️ {meta.sellerEmail}</a>
-          )}
+      {/* Right: sticky purchase panel */}
+      <div className="space-y-4 lg:sticky lg:top-24 lg:self-start">
+        {!listing.active && <ErrorNote>This listing is no longer available.</ErrorNote>}
+        {meta?.archived && (
+          <ErrorNote>The seller has withdrawn this listing — please check with them before paying.</ErrorNote>
+        )}
+
+        <div className="card space-y-3">
+          <div className="font-semibold">What you&apos;ll pay</div>
+          <div className="surface space-y-1 text-sm">
+            <Row k="Item price (refundable until you confirm)" v={fmtUsd1e8(listing.priceUsd1e8)} />
+            <Row k="Refundable deposit" v={fmtUsd1e8(deposit)} />
+            <Row
+              k={stable ? 'You lock now' : 'You lock now (incl. price buffer)'}
+              v={tokenAmount === null ? '…' : stable ? `${fmtUsd1e8(total)} USDC` : `~${fmtUsd1e8(total)}`}
+              bold
+            />
+          </div>
+          <p className="text-xs text-zinc-400">{policyText(listing.priceUsd1e8, listing.depositBps)}</p>
           <p className="text-xs text-zinc-500">
-            You&apos;ll get the seller&apos;s live location + full contact after you lock payment.
+            {listing.freeCancelWindow > 0n
+              ? `Set by the seller: free cancellation for ${fmtDuration(listing.freeCancelWindow)} after you pay.`
+              : 'Set by the seller: no free-cancel window on this listing.'}{' '}
+            The deal auto-refunds if the meet doesn&apos;t happen within {fmtDuration(listing.dealTtl)}.
           </p>
+          {listing.bond > 0n && (
+            <p className="text-xs text-emerald-300">
+              🛡️ The seller staked a {fmtUsd1e8(listing.bond * 100n)} no-show bond — it&apos;s yours
+              if they don&apos;t show up.
+            </p>
+          )}
+          {!stable && (
+            <InfoNote>
+              You&apos;re paying with a price-variable token; at release it&apos;s priced live so the
+              seller gets exactly {fmtUsd1e8(listing.priceUsd1e8)} and any extra comes back to you.
+            </InfoNote>
+          )}
         </div>
-      )}
 
-      {fundErr && <ErrorNote>{fundErr}</ErrorNote>}
+        {fundErr && <ErrorNote>{fundErr}</ErrorNote>}
 
-      {!isConnected ? (
-        <button className="btn-primary" onClick={login}>Sign in to buy</button>
-      ) : !walletClient || tokenAmount === null ? (
-        <button className="btn-primary" disabled>Preparing…</button>
-      ) : (
-        <div className="space-y-1">
-          <div className="[&>button]:btn-primary">
+        {!isConnected ? (
+          <button className="btn-primary" onClick={login}>Sign in to buy</button>
+        ) : !walletClient || tokenAmount === null ? (
+          <button className="btn-primary" disabled>Preparing…</button>
+        ) : (
+          <VaultLock
+            amountLabel={stable ? `${fmtUsd1e8(total)} USDC` : `~${fmtUsd1e8(total)}`}
+            policyNote="Locks your payment now — the seller can't take it until you confirm in person."
+          >
             <FundButton
               listingId={listing.listingId}
               tokenAmount={tokenAmount}
-              freeCancelUntil={BigInt(nowSec() + FREE_CANCEL_WINDOW)}
-              expiry={BigInt(nowSec() + EXPIRY_WINDOW)}
               walletClient={walletClient}
               onFunded={(d) => {
                 setDealId(d);
@@ -228,18 +254,11 @@ export default function BuyListingPage({ params }: { params: { listingId: string
               }}
               onError={(e) => setFundErr(errMsg(e))}
             />
-          </div>
-          <p className="text-center text-xs text-zinc-500">
-            Locks your payment now — the seller can&apos;t take it until you confirm in person.
-          </p>
-        </div>
-      )}
+          </VaultLock>
+        )}
+      </div>
     </div>
   );
-}
-
-function nowSec() {
-  return Math.floor(Date.now() / 1000);
 }
 
 function Row({ k, v, bold }: { k: string; v: string; bold?: boolean }) {

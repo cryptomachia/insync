@@ -115,35 +115,32 @@ async function makeDeal(opts: { freeCancelOffsetSec: number; expiryOffsetSec: nu
   // Local default uses USDC as payToken. To exercise a true volatile deal,
   // deploy a volatile MockERC20 + MockVerifier and swap payToken here.
   const payToken: Address = usdc;
-  // list
+  // list — the SELLER sets the cancellation timing policy (windows in seconds), not the buyer.
   const listHash = await seller.client.writeContract({
     address: escrow,
     abi: escrowAbi,
     functionName: 'list',
-    args: [PRICE_USD_1E8, DEPOSIT_BPS, payToken],
+    args: [PRICE_USD_1E8, DEPOSIT_BPS, payToken, BigInt(opts.freeCancelOffsetSec), BigInt(opts.expiryOffsetSec), 0n],
     account: seller.account,
     chain: seller.client.chain,
   });
   const listRcpt = await publicClient.waitForTransactionReceipt({ hash: listHash });
   const listingId = eventArg(listRcpt.logs, 'Listed', 'listingId');
 
-  // Base offsets on the CHAIN's current block timestamp, not wall-clock: this script
-  // repeatedly calls evm_increaseTime, so anvil's clock drifts ahead of Date.now().
-  const latest = await publicClient.getBlock({ blockTag: 'latest' });
-  const now = Number(latest.timestamp);
-  const freeCancelUntil = BigInt(now + opts.freeCancelOffsetSec);
-  const expiry = BigInt(now + opts.expiryOffsetSec);
-
+  // fund — the deal's freeCancelUntil/expiry are now DERIVED on-chain from the listing's
+  // policy relative to the fund block; the buyer no longer passes any timing.
   const fundHash = await buyer.client.writeContract({
     address: escrow,
     abi: escrowAbi,
     functionName: 'fund',
-    args: [listingId, FUND_USDC, freeCancelUntil, expiry],
+    args: [listingId, FUND_USDC],
     account: buyer.account,
     chain: buyer.client.chain,
   });
   const fundRcpt = await publicClient.waitForTransactionReceipt({ hash: fundHash });
   const dealId = eventArg(fundRcpt.logs, 'Funded', 'dealId');
+  const freeCancelUntil = eventArg(fundRcpt.logs, 'Funded', 'freeCancelUntil');
+  const expiry = eventArg(fundRcpt.logs, 'Funded', 'expiry');
   return { listingId, dealId, freeCancelUntil, expiry };
 }
 

@@ -57,7 +57,7 @@ export default function TradeHistoryPage() {
 
   if (!isConnected) {
     return (
-      <div className="space-y-4">
+      <div className="mx-auto max-w-2xl space-y-4">
         <h1 className="text-xl font-bold">Trade history</h1>
         <InfoNote>Sign in to see your trade history.</InfoNote>
         <button className="btn-primary" onClick={login}>
@@ -68,9 +68,9 @@ export default function TradeHistoryPage() {
   }
 
   return (
-    <div className="space-y-5">
+    <div className="mx-auto max-w-2xl space-y-5">
       <div className="flex items-center justify-between">
-        <h1 className="text-xl font-bold">Trade history</h1>
+        <h1 className="text-2xl font-bold">Trade history</h1>
         <button className="btn-secondary !w-auto px-3 py-1.5 text-sm" onClick={load} disabled={loading}>
           {loading ? 'Refreshing…' : 'Refresh'}
         </button>

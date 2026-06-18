@@ -5,7 +5,7 @@ export const metadata = {
   description: 'A plain-English guide to buying and selling from strangers, safely, in person.',
 };
 
-const ESCROW = '0x660b15A7a9caE8A0D8c380F0764103BC24c07B1d';
+const ESCROW = '0xb6c4C1B841C558280783979BA76009a4F3024410';
 
 const ARCHITECTURE = `
 ┌──────────────────────── mobile web · Next.js (apps/web) ────────────────────────┐
@@ -48,7 +48,7 @@ const FLOW = `
 
 export default function DocsPage() {
   return (
-    <div className="space-y-8">
+    <div className="mx-auto max-w-3xl space-y-8">
       <header className="space-y-2">
         <h1 className="text-3xl font-bold leading-tight">How inSync works</h1>
         <p className="text-zinc-400">

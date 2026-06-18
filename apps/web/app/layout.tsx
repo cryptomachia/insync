@@ -4,7 +4,7 @@ import './globals.css';
 import Providers from '@/components/Providers';
 import Nav from '@/components/Nav';
 
-const ESCROW = '0x660b15A7a9caE8A0D8c380F0764103BC24c07B1d';
+const ESCROW = '0xb6c4C1B841C558280783979BA76009a4F3024410';
 
 export const metadata: Metadata = {
   title: 'inSync — trustless in-person escrow',
@@ -28,8 +28,8 @@ export default function RootLayout({
       <body>
         <Providers>
           <Nav />
-          <main className="mx-auto max-w-md px-4 py-6">{children}</main>
-          <footer className="mx-auto max-w-md px-4 pb-10 pt-2 text-center text-xs text-zinc-500">
+          <main className="mx-auto w-full max-w-6xl px-4 py-8 sm:px-6 lg:px-8">{children}</main>
+          <footer className="mx-auto w-full max-w-6xl px-4 pb-12 pt-6 text-center text-xs text-zinc-500 sm:px-6 lg:px-8">
             <div className="flex justify-center gap-4">
               <Link href="/docs" className="hover:text-zinc-300">
                 How it works

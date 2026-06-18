@@ -43,23 +43,38 @@ contract EscrowTest is Test {
     // ---------------------------------------------------------------------------------------
 
     function _list() internal returns (uint256 listingId) {
-        vm.prank(seller);
-        listingId = escrow.list(PRICE, DEPOSIT_BPS, address(usdc));
+        return _list(0, 1 days);
     }
 
-    function _fund(uint256 listingId, uint64 freeCancelUntil, uint64 expiry)
-        internal
-        returns (uint256 dealId)
-    {
-        vm.startPrank(buyer);
-        usdc.approve(address(escrow), TOTAL_USDC);
-        dealId = escrow.fund(listingId, TOTAL_USDC, freeCancelUntil, expiry);
+    function _list(uint64 freeCancelWindow, uint64 dealTtl) internal returns (uint256 listingId) {
+        vm.prank(seller);
+        listingId = escrow.list(PRICE, DEPOSIT_BPS, address(usdc), freeCancelWindow, dealTtl, 0);
+    }
+
+    // List with a seller no-show bond (mints + approves the bond for the seller first).
+    function _listWithBond(uint256 bond) internal returns (uint256 listingId) {
+        usdc.mint(seller, bond);
+        vm.startPrank(seller);
+        usdc.approve(address(escrow), bond);
+        listingId = escrow.list(PRICE, DEPOSIT_BPS, address(usdc), 0, 1 days, bond);
         vm.stopPrank();
     }
 
+    function _fund(uint256 listingId) internal returns (uint256 dealId) {
+        vm.startPrank(buyer);
+        usdc.approve(address(escrow), TOTAL_USDC);
+        dealId = escrow.fund(listingId, TOTAL_USDC);
+        vm.stopPrank();
+    }
+
+    // Test helper that still expresses outcomes in absolute timestamps: it translates the
+    // requested freeCancelUntil/expiry into the listing's windows (list & fund share this block's
+    // timestamp), so the §4 branch tests below read unchanged.
     function _listAndFund(uint64 freeCancelUntil, uint64 expiry) internal returns (uint256 dealId) {
-        uint256 listingId = _list();
-        dealId = _fund(listingId, freeCancelUntil, expiry);
+        uint64 fcw = freeCancelUntil == 0 ? 0 : freeCancelUntil - uint64(block.timestamp);
+        uint64 ttl = expiry - uint64(block.timestamp);
+        uint256 listingId = _list(fcw, ttl);
+        dealId = _fund(listingId);
     }
 
     // ---------------------------------------------------------------------------------------
@@ -68,34 +83,38 @@ contract EscrowTest is Test {
 
     function test_List_EmitsAndStores() public {
         vm.expectEmit(true, true, false, true);
-        emit Escrow.Listed(1, seller, PRICE, DEPOSIT_BPS, address(usdc));
+        emit Escrow.Listed(1, seller, PRICE, DEPOSIT_BPS, address(usdc), 0, uint64(1 days), 0);
         uint256 listingId = _list();
         assertEq(listingId, 1);
 
-        (address s, uint256 p, uint16 d, address t, bool active) = escrow.getListing(listingId);
+        (address s, uint256 p, uint16 d, address t, bool active, uint64 fcw, uint64 ttl, uint256 bond) =
+            escrow.getListing(listingId);
         assertEq(s, seller);
         assertEq(p, PRICE);
         assertEq(d, DEPOSIT_BPS);
         assertEq(t, address(usdc));
         assertTrue(active);
+        assertEq(fcw, 0);
+        assertEq(ttl, uint64(1 days));
+        assertEq(bond, 0);
     }
 
     function test_List_RevertZeroPrice() public {
         vm.prank(seller);
         vm.expectRevert(Escrow.InvalidPrice.selector);
-        escrow.list(0, DEPOSIT_BPS, address(usdc));
+        escrow.list(0, DEPOSIT_BPS, address(usdc), 0, uint64(1 days), 0);
     }
 
     function test_List_RevertBadDepositBps() public {
         vm.prank(seller);
         vm.expectRevert(Escrow.InvalidDepositBps.selector);
-        escrow.list(PRICE, 10_001, address(usdc));
+        escrow.list(PRICE, 10_001, address(usdc), 0, uint64(1 days), 0);
     }
 
     function test_List_RevertZeroToken() public {
         vm.prank(seller);
         vm.expectRevert(Escrow.ZeroToken.selector);
-        escrow.list(PRICE, DEPOSIT_BPS, address(0));
+        escrow.list(PRICE, DEPOSIT_BPS, address(0), 0, uint64(1 days), 0);
     }
 
     function test_List_VolatileNeedsVerifier() public {
@@ -103,7 +122,123 @@ contract EscrowTest is Test {
         MockERC20 weth = new MockERC20("WETH", "WETH", 18);
         vm.prank(seller);
         vm.expectRevert(Escrow.VolatileNeedsVerifier.selector);
-        noVerifier.list(PRICE, DEPOSIT_BPS, address(weth));
+        noVerifier.list(PRICE, DEPOSIT_BPS, address(weth), 0, uint64(1 days), 0);
+    }
+
+    // Timing policy is validated at LIST time now (the seller owns it), not at fund time.
+    function test_List_RevertZeroTtl() public {
+        vm.prank(seller);
+        vm.expectRevert(Escrow.InvalidExpiry.selector);
+        escrow.list(PRICE, DEPOSIT_BPS, address(usdc), 0, 0, 0);
+    }
+
+    function test_List_RevertFreeCancelAfterTtl() public {
+        vm.prank(seller);
+        vm.expectRevert(Escrow.InvalidFreeCancel.selector);
+        escrow.list(PRICE, DEPOSIT_BPS, address(usdc), uint64(2 days), uint64(1 days), 0);
+    }
+
+    // ---------------------------------------------------------------------------------------
+    // Seller no-show bond (symmetric to the buyer deposit)
+    // ---------------------------------------------------------------------------------------
+
+    uint256 internal constant BOND = 5_000000; // $5
+
+    function test_Bond_ReturnedOnCompletion() public {
+        uint256 listingId = _listWithBond(BOND);
+        uint256 dealId = _fund(listingId);
+        assertEq(escrow.bondOf(dealId), BOND);
+
+        vm.prank(buyer);
+        escrow.confirmReceipt(dealId, "");
+
+        // Honest deal: seller gets price + bond back; buyer gets the deposit; escrow drained.
+        assertEq(usdc.balanceOf(seller), PRICE_USDC + BOND);
+        assertEq(usdc.balanceOf(address(escrow)), 0);
+        assertEq(escrow.bondOf(dealId), 0);
+    }
+
+    function test_Bond_ForfeitedToBuyer_OnReclaimNoShow() public {
+        uint256 listingId = _listWithBond(BOND);
+        uint256 dealId = _fund(listingId);
+        // Seller never checks in.
+        vm.warp(block.timestamp + 2 days); // past expiry
+        uint256 bBefore = usdc.balanceOf(buyer);
+
+        vm.prank(stranger);
+        escrow.reclaimExpired(dealId, "");
+
+        // Seller ghosted → buyer gets full refund + the bond; seller gets nothing.
+        assertEq(usdc.balanceOf(buyer), bBefore + TOTAL_USDC + BOND);
+        assertEq(usdc.balanceOf(seller), 0);
+        assertEq(usdc.balanceOf(address(escrow)), 0);
+    }
+
+    function test_Bond_ForfeitedToBuyer_OnBuyerCancelNoShow() public {
+        uint256 listingId = _listWithBond(BOND); // free window 0 → instantly past it
+        uint256 dealId = _fund(listingId);
+        uint256 bBefore = usdc.balanceOf(buyer);
+
+        vm.prank(buyer);
+        escrow.buyerCancel(dealId, ""); // seller not checked in → no-show
+
+        assertEq(usdc.balanceOf(buyer), bBefore + TOTAL_USDC + BOND);
+        assertEq(usdc.balanceOf(seller), 0);
+        assertEq(usdc.balanceOf(address(escrow)), 0);
+    }
+
+    function test_Bond_ReturnedToSeller_OnBuyerFlake() public {
+        uint256 listingId = _listWithBond(BOND);
+        uint256 dealId = _fund(listingId);
+        vm.prank(seller);
+        escrow.checkIn(dealId); // seller showed up
+
+        vm.prank(buyer);
+        escrow.buyerCancel(dealId, ""); // past (zero) free window + checked in → forfeit
+
+        // Seller keeps deposit + bond; buyer gets the price back.
+        assertEq(usdc.balanceOf(seller), DEPOSIT_USDC + BOND);
+        assertEq(usdc.balanceOf(buyer), 1_000_000000 - DEPOSIT_USDC);
+        assertEq(usdc.balanceOf(address(escrow)), 0);
+    }
+
+    function test_Fund_DeactivatesListing() public {
+        uint256 listingId = _list();
+        _fund(listingId);
+        (,,,, bool active,,,) = escrow.getListing(listingId);
+        assertFalse(active);
+        vm.prank(buyer);
+        vm.expectRevert(Escrow.ListingNotActive.selector);
+        escrow.fund(listingId, TOTAL_USDC);
+    }
+
+    function test_CancelListing_RefundsBondAndDeactivates() public {
+        uint256 listingId = _listWithBond(BOND);
+        vm.prank(seller);
+        escrow.cancelListing(listingId);
+
+        assertEq(usdc.balanceOf(seller), BOND); // bond returned
+        (,,,, bool active,,,) = escrow.getListing(listingId);
+        assertFalse(active);
+
+        vm.prank(buyer);
+        vm.expectRevert(Escrow.ListingNotActive.selector);
+        escrow.fund(listingId, TOTAL_USDC);
+    }
+
+    function test_CancelListing_OnlySeller() public {
+        uint256 listingId = _listWithBond(BOND);
+        vm.prank(buyer);
+        vm.expectRevert(Escrow.NotSeller.selector);
+        escrow.cancelListing(listingId);
+    }
+
+    function test_CancelListing_RevertAfterFunded() public {
+        uint256 listingId = _listWithBond(BOND);
+        _fund(listingId); // consumes the listing
+        vm.prank(seller);
+        vm.expectRevert(Escrow.ListingNotActive.selector);
+        escrow.cancelListing(listingId);
     }
 
     function test_GetListing_RevertUnknown() public {
@@ -116,14 +251,14 @@ contract EscrowTest is Test {
     // ---------------------------------------------------------------------------------------
 
     function test_Fund_HappyPath() public {
-        uint256 listingId = _list();
+        uint256 listingId = _list(); // free window 0, ttl 1 day
         uint64 expiry = uint64(block.timestamp + 1 days);
 
         vm.startPrank(buyer);
         usdc.approve(address(escrow), TOTAL_USDC);
         vm.expectEmit(true, true, true, true);
         emit Escrow.Funded(1, listingId, buyer, seller, TOTAL_USDC, 0, expiry);
-        uint256 dealId = escrow.fund(listingId, TOTAL_USDC, 0, expiry);
+        uint256 dealId = escrow.fund(listingId, TOTAL_USDC);
         vm.stopPrank();
 
         assertEq(dealId, 1);
@@ -148,7 +283,7 @@ contract EscrowTest is Test {
         vm.expectRevert(
             abi.encodeWithSelector(Escrow.InsufficientFunding.selector, TOTAL_USDC, TOTAL_USDC - 1)
         );
-        escrow.fund(listingId, TOTAL_USDC - 1, 0, uint64(block.timestamp + 1 days));
+        escrow.fund(listingId, TOTAL_USDC - 1);
         vm.stopPrank();
     }
 
@@ -156,32 +291,13 @@ contract EscrowTest is Test {
         uint256 listingId = _list();
         vm.prank(buyer);
         vm.expectRevert(Escrow.ZeroToken.selector);
-        escrow.fund(listingId, 0, 0, uint64(block.timestamp + 1 days));
-    }
-
-    function test_Fund_RevertExpiryInPast() public {
-        uint256 listingId = _list();
-        vm.startPrank(buyer);
-        usdc.approve(address(escrow), TOTAL_USDC);
-        vm.expectRevert(Escrow.InvalidExpiry.selector);
-        escrow.fund(listingId, TOTAL_USDC, 0, uint64(block.timestamp));
-        vm.stopPrank();
-    }
-
-    function test_Fund_RevertFreeCancelAfterExpiry() public {
-        uint256 listingId = _list();
-        uint64 expiry = uint64(block.timestamp + 1 days);
-        vm.startPrank(buyer);
-        usdc.approve(address(escrow), TOTAL_USDC);
-        vm.expectRevert(Escrow.InvalidFreeCancel.selector);
-        escrow.fund(listingId, TOTAL_USDC, expiry + 1, expiry);
-        vm.stopPrank();
+        escrow.fund(listingId, 0);
     }
 
     function test_Fund_RevertUnknownListing() public {
         vm.prank(buyer);
         vm.expectRevert(Escrow.DealNotFound.selector);
-        escrow.fund(999, TOTAL_USDC, 0, uint64(block.timestamp + 1 days));
+        escrow.fund(999, TOTAL_USDC);
     }
 
     function test_GetDeal_RevertUnknown() public {

@@ -54,6 +54,17 @@ contract Escrow is ReentrancyGuard, Ownable {
         uint16 depositBps;
         address payToken;
         bool active;
+        // Cancellation timing policy — set by the SELLER at list time (not the buyer). The
+        // free-cancel window and deal lifetime are durations (seconds) applied from the fund
+        // timestamp, so the buyer cannot widen their own free-refund window to neuter the
+        // deposit-at-risk that protects the seller against flaking.
+        uint64 freeCancelWindow; // seconds after funding the buyer may cancel for a full refund
+        uint64 dealTtl;          // seconds after funding until the deal expires (reclaimable)
+        // Seller no-show bond (in payToken), staked by the seller at list time. It is returned to
+        // the seller on every honest outcome and FORFEITED TO THE BUYER if the seller never shows
+        // (the deal ends past the free window / at expiry with no check-in). This makes ghosting
+        // symmetric: the buyer's deposit binds the buyer, this bond binds the seller.
+        uint256 bond;
     }
 
     struct Deal {
@@ -62,11 +73,12 @@ contract Escrow is ReentrancyGuard, Ownable {
         address seller;
         address payToken;
         uint256 priceUsd1e8;
-        uint256 tokenAmount; // total payToken held in escrow for this deal
+        uint256 tokenAmount; // buyer's locked price+deposit (the pool price/deposit/surplus pay from)
         uint16 depositBps;
         uint64 freeCancelUntil;
         uint64 expiry;
         bool sellerCheckedIn;
+        uint256 bond; // seller's no-show bond, captured from the listing at fund time
     }
 
     // ---------------------------------------------------------------------------------------
@@ -103,8 +115,15 @@ contract Escrow is ReentrancyGuard, Ownable {
         address indexed seller,
         uint256 priceUsd1e8,
         uint16 depositBps,
-        address payToken
+        address payToken,
+        uint64 freeCancelWindow,
+        uint64 dealTtl,
+        uint256 bond
     );
+    /// @notice Seller withdrew an unfunded listing; the staked bond is returned.
+    event ListingCancelled(uint256 indexed listingId);
+    /// @notice Where a deal's seller bond went on settlement (to == seller: returned; to == buyer: forfeited).
+    event BondSettled(uint256 indexed dealId, address indexed to, uint256 amount);
     event Funded(
         uint256 indexed dealId,
         uint256 indexed listingId,
@@ -176,15 +195,39 @@ contract Escrow is ReentrancyGuard, Ownable {
 
     /// @notice Seller publishes an item for sale. `payToken` may be the stable token or, if a
     ///         verifier is configured, any volatile ERC20 priced via Data Streams at settlement.
-    function list(uint256 priceUsd1e8, uint16 depositBps, address payToken)
-        external
-        returns (uint256 listingId)
-    {
+    /// @param freeCancelWindow seconds after funding during which the buyer may cancel for a full
+    ///        refund (0 = no free window). The SELLER sets this so the buyer can't extend their own
+    ///        free-refund window and dodge the deposit-at-risk.
+    /// @param dealTtl seconds after funding until the deal expires and becomes reclaimable. Must be
+    ///        non-zero and >= freeCancelWindow.
+    /// @param bondAmount seller no-show bond, pulled from the seller in `payToken` now and held until
+    ///        the deal settles. Returned to the seller on every honest outcome; forfeited to the
+    ///        buyer if the seller never shows. 0 = no bond. Seller must approve this contract first.
+    function list(
+        uint256 priceUsd1e8,
+        uint16 depositBps,
+        address payToken,
+        uint64 freeCancelWindow,
+        uint64 dealTtl,
+        uint256 bondAmount
+    ) external nonReentrant returns (uint256 listingId) {
         if (priceUsd1e8 == 0) revert InvalidPrice();
         if (depositBps > BPS_DENOMINATOR) revert InvalidDepositBps();
         if (payToken == address(0)) revert ZeroToken();
         // A volatile listing is only usable if a verifier is configured.
         if (payToken != stableToken && verifierProxy == address(0)) revert VolatileNeedsVerifier();
+        // Timing policy sanity: a deal must expire in the future, and a free-cancel window past
+        // expiry is meaningless. (Validated here, at list time, because the seller owns the policy.)
+        if (dealTtl == 0) revert InvalidExpiry();
+        if (freeCancelWindow > dealTtl) revert InvalidFreeCancel();
+
+        // Pull the seller's bond and record the *actual* amount received (fee-on-transfer safe).
+        uint256 bond;
+        if (bondAmount > 0) {
+            uint256 balBefore = IERC20(payToken).balanceOf(address(this));
+            IERC20(payToken).safeTransferFrom(msg.sender, address(this), bondAmount);
+            bond = IERC20(payToken).balanceOf(address(this)) - balBefore;
+        }
 
         listingId = nextListingId++;
         listings[listingId] = Listing({
@@ -192,20 +235,53 @@ contract Escrow is ReentrancyGuard, Ownable {
             priceUsd1e8: priceUsd1e8,
             depositBps: depositBps,
             payToken: payToken,
-            active: true
+            active: true,
+            freeCancelWindow: freeCancelWindow,
+            dealTtl: dealTtl,
+            bond: bond
         });
 
-        emit Listed(listingId, msg.sender, priceUsd1e8, depositBps, payToken);
+        emit Listed(listingId, msg.sender, priceUsd1e8, depositBps, payToken, freeCancelWindow, dealTtl, bond);
+    }
+
+    /// @notice Seller withdraws an unfunded listing and gets the staked bond back. Only callable by
+    ///         the seller while the listing is still active (i.e. not yet funded — funding consumes it).
+    function cancelListing(uint256 listingId) external nonReentrant {
+        Listing storage l = listings[listingId];
+        if (l.seller == address(0)) revert DealNotFound();
+        if (msg.sender != l.seller) revert NotSeller();
+        if (!l.active) revert ListingNotActive();
+
+        l.active = false;
+        uint256 bond = l.bond;
+        l.bond = 0;
+        _payout(l.payToken, l.seller, bond);
+
+        emit ListingCancelled(listingId);
     }
 
     function getListing(uint256 listingId)
         external
         view
-        returns (address seller, uint256 priceUsd1e8, uint16 depositBps, address payToken, bool active)
+        returns (
+            address seller,
+            uint256 priceUsd1e8,
+            uint16 depositBps,
+            address payToken,
+            bool active,
+            uint64 freeCancelWindow,
+            uint64 dealTtl,
+            uint256 bond
+        )
     {
         Listing storage l = listings[listingId];
         if (l.seller == address(0)) revert DealNotFound();
-        return (l.seller, l.priceUsd1e8, l.depositBps, l.payToken, l.active);
+        return (l.seller, l.priceUsd1e8, l.depositBps, l.payToken, l.active, l.freeCancelWindow, l.dealTtl, l.bond);
+    }
+
+    /// @notice The seller no-show bond held for a deal (in the deal's payToken).
+    function bondOf(uint256 dealId) external view returns (uint256) {
+        return deals[dealId].bond;
     }
 
     // ---------------------------------------------------------------------------------------
@@ -222,9 +298,11 @@ contract Escrow is ReentrancyGuard, Ownable {
     ///         never exceed the balance and strand funds. For well-behaved tokens (USDC) the two
     ///         are identical. The stable price+deposit requirement is checked against the received
     ///         amount.
-    /// @param freeCancelUntil buyer may cancel for a full refund before this timestamp.
-    /// @param expiry          after this timestamp anyone/CRE may {reclaimExpired}.
-    function fund(uint256 listingId, uint256 tokenAmount, uint64 freeCancelUntil, uint64 expiry)
+    /// @dev    The cancellation timing is DERIVED from the seller's listing policy, not supplied by
+    ///         the buyer: `freeCancelUntil`/`expiry` are computed from the listing's
+    ///         `freeCancelWindow`/`dealTtl` relative to the current block. This is what makes the
+    ///         deposit-at-risk actually bind the buyer — they can't set their own free-refund window.
+    function fund(uint256 listingId, uint256 tokenAmount)
         external
         nonReentrant
         returns (uint256 dealId)
@@ -233,9 +311,16 @@ contract Escrow is ReentrancyGuard, Ownable {
         if (l.seller == address(0)) revert DealNotFound();
         if (!l.active) revert ListingNotActive();
         if (tokenAmount == 0) revert ZeroToken();
-        if (expiry <= block.timestamp) revert InvalidExpiry();
-        // freeCancelUntil must not be after expiry (a free-cancel window past expiry is meaningless).
-        if (freeCancelUntil > expiry) revert InvalidFreeCancel();
+
+        // A listing is single-use: funding consumes it (so its bond backs exactly one deal and the
+        // item can't be double-sold). The seller relists to sell again.
+        l.active = false;
+
+        // Derive the deal's timing from the seller's listing policy (durations from now). uint64
+        // arithmetic is checked (reverts on overflow); list() guarantees dealTtl > 0 so expiry > now.
+        uint64 nowTs = uint64(block.timestamp);
+        uint64 freeCancelUntil = l.freeCancelWindow == 0 ? 0 : nowTs + l.freeCancelWindow;
+        uint64 expiry = nowTs + l.dealTtl;
 
         address payToken = l.payToken;
 
@@ -269,7 +354,8 @@ contract Escrow is ReentrancyGuard, Ownable {
             depositBps: l.depositBps,
             freeCancelUntil: freeCancelUntil,
             expiry: expiry,
-            sellerCheckedIn: false
+            sellerCheckedIn: false,
+            bond: l.bond // capture the seller's bond into the deal (it's already held by the escrow)
         });
 
         emit Funded(dealId, listingId, msg.sender, l.seller, received, freeCancelUntil, expiry);
@@ -345,6 +431,7 @@ contract Escrow is ReentrancyGuard, Ownable {
         _payout(d.payToken, d.buyer, buyerRefunded);
 
         _onCompleted(d.buyer, d.seller);
+        _settleBond(dealId, d, false); // honest completion → bond back to seller
 
         emit Completed(dealId, sellerPaid, buyerRefunded);
         // `depositUnits` is unused on the success path but computed for symmetry/validation.
@@ -364,6 +451,7 @@ contract Escrow is ReentrancyGuard, Ownable {
         _payout(d.payToken, d.buyer, amount);
 
         _onMutualCancel(d.buyer, d.seller);
+        _settleBond(dealId, d, false); // cooperative cancel → bond back to seller
 
         emit Refunded(dealId, amount);
     }
@@ -388,11 +476,14 @@ contract Escrow is ReentrancyGuard, Ownable {
 
             _payout(d.payToken, d.buyer, amount);
 
-            // A seller no-show after the free window is the seller's fault → record it.
+            // A seller no-show after the free window is the seller's fault → record it and slash
+            // the bond to the buyer. A pure free-window cancel is no-fault → bond back to seller.
             if (!freeWindow) {
                 _onSellerNoShow(d.buyer, d.seller);
+                _settleBond(dealId, d, true); // seller never showed → bond → buyer
+            } else {
+                _settleBond(dealId, d, false); // free-window cancel → bond back to seller
             }
-            // (A pure free-window cancel is a no-fault refund; no reputation hook fires.)
 
             emit Refunded(dealId, amount);
         } else {
@@ -422,6 +513,7 @@ contract Escrow is ReentrancyGuard, Ownable {
             _payout(d.payToken, d.buyer, amount);
 
             _onSellerNoShow(d.buyer, d.seller);
+            _settleBond(dealId, d, true); // seller never showed → bond → buyer
 
             emit Refunded(dealId, amount);
         }
@@ -456,8 +548,20 @@ contract Escrow is ReentrancyGuard, Ownable {
         _payout(d.payToken, d.buyer, toBuyer);
 
         _onBuyerFlake(d.buyer, d.seller);
+        _settleBond(dealId, d, false); // the seller showed up → bond back to seller
 
         emit Forfeited(dealId, toBuyer, toSeller);
+    }
+
+    /// @dev Routes a deal's seller bond on settlement: to the buyer when the seller no-showed
+    ///      (toBuyer=true), otherwise back to the seller. Zeroes the stored bond first (CEI).
+    function _settleBond(uint256 dealId, Deal storage d, bool toBuyer) internal {
+        uint256 bond = d.bond;
+        if (bond == 0) return;
+        d.bond = 0;
+        address to = toBuyer ? d.buyer : d.seller;
+        _payout(d.payToken, to, bond);
+        emit BondSettled(dealId, to, bond);
     }
 
     /// @dev Computes the token units worth the item price and the deposit for this deal,

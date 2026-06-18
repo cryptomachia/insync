@@ -1,12 +1,62 @@
 // Write transactions to the Escrow, signed by the wallet client from @handoff/auth.
 // Funding goes through @handoff/funding (FundButton/useFunding); these cover the rest of the
 // lifecycle: list / checkIn / confirmReceipt / agreeCancel / buyerCancel. (SPEC §3, §10)
-import type { WalletClient } from 'viem';
+import { parseAbi, type WalletClient } from 'viem';
 import { baseSepolia } from 'viem/chains';
 import { escrowAbi, getAddresses } from '@handoff/contracts-abi';
 import { getReport } from '@handoff/datastreams';
 import { publicClient, chain } from './chain';
 import { isStableToken } from './format';
+
+const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL ?? 'http://127.0.0.1:8787';
+const erc20Abi = parseAbi([
+  'function balanceOf(address owner) view returns (uint256)',
+  'function allowance(address owner, address spender) view returns (uint256)',
+  'function approve(address spender, uint256 amount) returns (bool)',
+]);
+
+// Make sure `owner` holds + has approved `amount` of `token` for the escrow (used for the seller
+// bond at list time). Tops up from the test-USDC faucet if short. Mirrors the buyer fund path.
+async function ensureSpendable(
+  wc: WalletClient,
+  token: `0x${string}`,
+  owner: `0x${string}`,
+  amount: bigint,
+) {
+  const pub = publicClient();
+  const bal = () =>
+    pub.readContract({ address: token, abi: erc20Abi, functionName: 'balanceOf', args: [owner] }) as Promise<bigint>;
+  let have = await bal();
+  if (have < amount) {
+    await fetch(`${BACKEND_URL}/faucet`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ address: owner }),
+    }).catch(() => {});
+    for (let i = 0; i < 25 && have < amount; i++) {
+      await new Promise((r) => setTimeout(r, 1000));
+      have = await bal();
+    }
+    if (have < amount) throw new Error('Not enough test USDC for the no-show bond — try again in a moment.');
+  }
+  const allowance = (await pub.readContract({
+    address: token,
+    abi: erc20Abi,
+    functionName: 'allowance',
+    args: [owner, escrowAddr()],
+  })) as bigint;
+  if (allowance < amount) {
+    const hash = await wc.writeContract({
+      address: token,
+      abi: erc20Abi,
+      functionName: 'approve',
+      args: [escrowAddr(), amount],
+      account: wc.account!,
+      chain,
+    });
+    await pub.waitForTransactionReceipt({ hash });
+  }
+}
 
 function escrowAddr(): `0x${string}` {
   const { escrow } = getAddresses();
@@ -52,15 +102,28 @@ async function send(wc: WalletClient, fn: () => Promise<`0x${string}`>) {
 /** Seller creates a listing. Returns the listingId parsed from the Listed event. */
 export async function listItem(
   wc: WalletClient,
-  args: { priceUsd1e8: bigint; depositBps: number; payToken: `0x${string}` },
+  args: {
+    priceUsd1e8: bigint;
+    depositBps: number;
+    payToken: `0x${string}`;
+    // Seller-set cancellation timing policy (seconds from funding).
+    freeCancelWindow: bigint;
+    dealTtl: bigint;
+    // Seller no-show bond (payToken units) staked now; forfeited to the buyer if the seller ghosts.
+    bondAmount: bigint;
+  },
 ): Promise<bigint> {
   const account = requireAccount(wc);
   await ensureChain(wc);
+  // Stake the bond up front (approve + top up if needed) before listing.
+  if (args.bondAmount > 0n) {
+    await ensureSpendable(wc, args.payToken, account.address, args.bondAmount);
+  }
   const hash = await wc.writeContract({
     address: escrowAddr(),
     abi: escrowAbi,
     functionName: 'list',
-    args: [args.priceUsd1e8, args.depositBps, args.payToken],
+    args: [args.priceUsd1e8, args.depositBps, args.payToken, args.freeCancelWindow, args.dealTtl, args.bondAmount],
     account,
     chain,
   });
@@ -82,6 +145,22 @@ export async function listItem(
     }
   }
   return 0n;
+}
+
+/** Seller withdraws an unfunded listing and gets the staked bond back. */
+export async function cancelListing(wc: WalletClient, listingId: bigint) {
+  const account = requireAccount(wc);
+  await ensureChain(wc);
+  return send(wc, () =>
+    wc.writeContract({
+      address: escrowAddr(),
+      abi: escrowAbi,
+      functionName: 'cancelListing',
+      args: [listingId],
+      account,
+      chain,
+    }),
+  );
 }
 
 /** Seller checks in at the meet (gates forfeiture). */

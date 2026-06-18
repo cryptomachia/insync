@@ -9,6 +9,12 @@ export type Listing = {
   depositBps: number;
   payToken: `0x${string}`;
   active: boolean;
+  // Seller-set cancellation timing policy (seconds), derived into the deal at fund time.
+  freeCancelWindow: bigint;
+  dealTtl: bigint;
+  // Seller no-show bond staked on the listing (payToken units); forfeited to the buyer if the
+  // seller ghosts.
+  bond: bigint;
 };
 
 export type Deal = {
@@ -37,7 +43,7 @@ function requireEscrow(): `0x${string}` {
 
 export async function readListing(listingId: bigint): Promise<Listing> {
   const escrow = requireEscrow();
-  const [seller, priceUsd1e8, depositBps, payToken, active] =
+  const [seller, priceUsd1e8, depositBps, payToken, active, freeCancelWindow, dealTtl, bond] =
     await publicClient().readContract({
       address: escrow,
       abi: escrowAbi,
@@ -51,6 +57,9 @@ export async function readListing(listingId: bigint): Promise<Listing> {
     depositBps: Number(depositBps),
     payToken,
     active,
+    freeCancelWindow,
+    dealTtl,
+    bond,
   };
 }
 

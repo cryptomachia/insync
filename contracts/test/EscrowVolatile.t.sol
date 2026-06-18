@@ -40,17 +40,18 @@ contract EscrowVolatileTest is Test {
     }
 
     function _listVolatile() internal returns (uint256 listingId) {
-        vm.prank(seller);
-        listingId = escrow.list(PRICE, DEPOSIT_BPS, address(weth));
+        return _listVolatile(0, 1 days);
     }
 
-    function _fund(uint256 listingId, uint256 amount, uint64 freeCancelUntil, uint64 expiry)
-        internal
-        returns (uint256 dealId)
-    {
+    function _listVolatile(uint64 freeCancelWindow, uint64 dealTtl) internal returns (uint256 listingId) {
+        vm.prank(seller);
+        listingId = escrow.list(PRICE, DEPOSIT_BPS, address(weth), freeCancelWindow, dealTtl, 0);
+    }
+
+    function _fund(uint256 listingId, uint256 amount) internal returns (uint256 dealId) {
         vm.startPrank(buyer);
         weth.approve(address(escrow), amount);
-        dealId = escrow.fund(listingId, amount, freeCancelUntil, expiry);
+        dealId = escrow.fund(listingId, amount);
         vm.stopPrank();
     }
 
@@ -61,7 +62,7 @@ contract EscrowVolatileTest is Test {
     function test_Volatile_ConfirmReceipt_EmptyReportUsesMockPrice() public {
         uint256 listingId = _listVolatile();
         uint256 funded = 0.03e18; // buffer above the 0.022 needed
-        uint256 dealId = _fund(listingId, funded, 0, uint64(block.timestamp + 1 days));
+        uint256 dealId = _fund(listingId, funded);
 
         vm.prank(buyer);
         escrow.confirmReceipt(dealId, ""); // empty → 4000e8
@@ -79,7 +80,7 @@ contract EscrowVolatileTest is Test {
     function test_Volatile_Surplus_ReturnsToBuyer() public {
         uint256 listingId = _listVolatile();
         uint256 funded = 0.03e18;
-        uint256 dealId = _fund(listingId, funded, 0, uint64(block.timestamp + 1 days));
+        uint256 dealId = _fund(listingId, funded);
 
         // Report price unchanged (4000) via explicit encoded report.
         bytes memory report = verifier.encodeReport(4000e8);
@@ -99,10 +100,10 @@ contract EscrowVolatileTest is Test {
     // ---------------------------------------------------------------------------------------
 
     function test_Volatile_BuyerCancel_Forfeit_WithSurplus() public {
-        uint256 listingId = _listVolatile();
-        uint256 funded = 0.03e18; // needs 0.022, surplus 0.008
         uint64 freeCancelUntil = uint64(block.timestamp + 1 hours);
-        uint256 dealId = _fund(listingId, funded, freeCancelUntil, uint64(block.timestamp + 1 days));
+        uint256 listingId = _listVolatile(1 hours, 1 days);
+        uint256 funded = 0.03e18; // needs 0.022, surplus 0.008
+        uint256 dealId = _fund(listingId, funded);
 
         vm.prank(seller);
         escrow.checkIn(dealId);
@@ -123,11 +124,11 @@ contract EscrowVolatileTest is Test {
     // ---------------------------------------------------------------------------------------
 
     function test_Volatile_Shortfall_PaysBuyerPriceFirst() public {
-        uint256 listingId = _listVolatile();
+        uint64 freeCancelUntil = uint64(block.timestamp + 1 hours);
+        uint256 listingId = _listVolatile(1 hours, 1 days);
         // Fund exactly enough at $4000: price+deposit = 0.022 WETH.
         uint256 funded = 0.022e18;
-        uint64 freeCancelUntil = uint64(block.timestamp + 1 hours);
-        uint256 dealId = _fund(listingId, funded, freeCancelUntil, uint64(block.timestamp + 1 days));
+        uint256 dealId = _fund(listingId, funded);
 
         vm.prank(seller);
         escrow.checkIn(dealId);
@@ -147,13 +148,13 @@ contract EscrowVolatileTest is Test {
     }
 
     function test_Volatile_PartialShortfall_SellerGetsRemainder() public {
-        uint256 listingId = _listVolatile();
+        uint64 freeCancelUntil = uint64(block.timestamp + 1 hours);
+        uint256 listingId = _listVolatile(1 hours, 1 days);
         // Fund 0.05 WETH (buffer). At a crash to $2000:
         //   price worth = 0.04, deposit worth = 0.004, total 0.044 <= 0.05 held → no shortfall.
         //   Then surplus 0.006 → buyer. This exercises the priced-at-call-time path with a move.
         uint256 funded = 0.05e18;
-        uint64 freeCancelUntil = uint64(block.timestamp + 1 hours);
-        uint256 dealId = _fund(listingId, funded, freeCancelUntil, uint64(block.timestamp + 1 days));
+        uint256 dealId = _fund(listingId, funded);
 
         vm.prank(seller);
         escrow.checkIn(dealId);
@@ -172,12 +173,12 @@ contract EscrowVolatileTest is Test {
 
     // Partial shortfall where deposit is squeezed but price fits.
     function test_Volatile_DepositSqueezed_PriceFits() public {
-        uint256 listingId = _listVolatile();
+        uint64 freeCancelUntil = uint64(block.timestamp + 1 hours);
+        uint256 listingId = _listVolatile(1 hours, 1 days);
         // Fund 0.042 WETH. Crash to $2000: price worth 0.04 (fits), deposit worth 0.004 but only
         // 0.002 remains → seller gets 0.002, buyer gets 0.04, escrow drained.
         uint256 funded = 0.042e18;
-        uint64 freeCancelUntil = uint64(block.timestamp + 1 hours);
-        uint256 dealId = _fund(listingId, funded, freeCancelUntil, uint64(block.timestamp + 1 days));
+        uint256 dealId = _fund(listingId, funded);
 
         vm.prank(seller);
         escrow.checkIn(dealId);
@@ -202,7 +203,7 @@ contract EscrowVolatileTest is Test {
         uint256 listingId = _listVolatile();
         uint256 funded = 0.03e18;
         uint64 expiry = uint64(block.timestamp + 1 days);
-        uint256 dealId = _fund(listingId, funded, 0, expiry);
+        uint256 dealId = _fund(listingId, funded);
 
         vm.prank(seller);
         escrow.checkIn(dealId);
@@ -222,7 +223,7 @@ contract EscrowVolatileTest is Test {
 
     function test_Volatile_RevertIfVerifierRemoved() public {
         uint256 listingId = _listVolatile();
-        uint256 dealId = _fund(listingId, 0.03e18, 0, uint64(block.timestamp + 1 days));
+        uint256 dealId = _fund(listingId, 0.03e18);
 
         escrow.setVerifierProxy(address(0));
 
@@ -234,7 +235,7 @@ contract EscrowVolatileTest is Test {
     // A non-positive verifier price must revert (bad oracle data).
     function test_Volatile_RevertOnNonPositivePrice() public {
         uint256 listingId = _listVolatile();
-        uint256 dealId = _fund(listingId, 0.03e18, 0, uint64(block.timestamp + 1 days));
+        uint256 dealId = _fund(listingId, 0.03e18);
 
         bytes memory badReport = verifier.encodeReport(0);
         vm.prank(buyer);
