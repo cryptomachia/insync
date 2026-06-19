@@ -56,6 +56,15 @@ const MAX_PAYLOAD_BYTES = 4 * 1024;
 // eslint-disable-next-line no-control-regex
 const CONTROL_CHARS_RE = new RegExp('[\\u0000-\\u001f\\u007f]');
 
+function safeParseArr(s: string): string[] {
+  try {
+    const v = JSON.parse(s);
+    return Array.isArray(v) ? v.filter((x) => typeof x === 'string') : [];
+  } catch {
+    return [];
+  }
+}
+
 export async function buildApp(opts: BuildAppOptions): Promise<FastifyInstance> {
   const { db, faucet } = opts;
   const app = Fastify({
@@ -95,6 +104,10 @@ export async function buildApp(opts: BuildAppOptions): Promise<FastifyInstance> 
       title: l.title,
       image: l.image,
       meetAddress: l.meet_address,
+      category: l.category,
+      condition: l.condition,
+      meetLat: l.meet_lat,
+      meetLng: l.meet_lng,
     })),
   }));
 
@@ -157,12 +170,17 @@ export async function buildApp(opts: BuildAppOptions): Promise<FastifyInstance> 
   const MAX_IMAGE = 2 * 1024 * 1024; // ~2 MiB base64 data URL
 
   const MAX_ADDR = 200;
+  const CATEGORIES = ['Electronics','Furniture','Vehicles','Clothing','Sports','Home','Toys','Tickets','Other'];
+  const CONDITIONS = ['New','Like New','Good','Fair'];
   const serializeMeta = (m: ReturnType<typeof db.getListingMeta>) =>
     m
       ? {
           title: m.title,
           description: m.description,
           image: m.image,
+          images: m.images ? safeParseArr(m.images) : (m.image ? [m.image] : []),
+          category: m.category,
+          condition: m.condition,
           meetAddress: m.meet_address,
           meetLat: m.meet_lat,
           meetLng: m.meet_lng,
@@ -188,6 +206,9 @@ export async function buildApp(opts: BuildAppOptions): Promise<FastifyInstance> 
       title?: string;
       description?: string;
       image?: string;
+      images?: string[];
+      category?: string;
+      condition?: string;
       meetAddress?: string;
       meetLat?: number;
       meetLng?: number;
@@ -233,10 +254,26 @@ export async function buildApp(opts: BuildAppOptions): Promise<FastifyInstance> 
       }
       image = b.image;
     }
+    // Gallery: up to 8 data-URL images, each ~2MB max.
+    let images: string[] | undefined;
+    if (Array.isArray(b.images)) {
+      const arr = b.images.filter((s) => typeof s === 'string' && /^data:image\//.test(s)).slice(0, 8);
+      if (arr.some((s) => s.length > MAX_IMAGE)) {
+        return reply.code(400).send({ error: 'a photo is too large (max ~2MB each)' });
+      }
+      images = arr;
+    }
+    const category =
+      typeof b.category === 'string' && CATEGORIES.includes(b.category) ? b.category : undefined;
+    const condition =
+      typeof b.condition === 'string' && CONDITIONS.includes(b.condition) ? b.condition : undefined;
     db.upsertListingMeta(BigInt(req.params.id), {
       title,
       description,
       image,
+      images,
+      category,
+      condition,
       meetAddress,
       meetLat,
       meetLng,
@@ -310,6 +347,78 @@ export async function buildApp(opts: BuildAppOptions): Promise<FastifyInstance> 
       typeof b.listingId === 'string' && /^\d{1,78}$/.test(b.listingId) ? b.listingId : undefined;
     db.upsertCoordination(BigInt(req.params.id), b.role, { lat, lng, phone, email, note, listingId });
     return reply.code(201).send({ ok: true });
+  });
+
+  // ---- Pre-deal messaging + offers (per listing + buyer party) ----
+  const MSG_KINDS = ['text', 'offer', 'accept', 'decline'];
+  const MAX_MSG = 1000;
+  const serializeMsg = (m: { id: number; sender: string; kind: string; body: string | null; price_usd_1e8: string | null; created_at: number }) => ({
+    id: m.id,
+    sender: m.sender,
+    kind: m.kind,
+    body: m.body,
+    priceUsd1e8: m.price_usd_1e8,
+    createdAt: m.created_at,
+  });
+
+  app.get<{ Params: { id: string; buyer: string } }>(
+    '/listings/:id/thread/:buyer',
+    async (req, reply) => {
+      if (!/^\d{1,78}$/.test(req.params.id)) return reply.code(400).send({ error: 'invalid listing id' });
+      if (!ADDR_RE.test(req.params.buyer)) return reply.code(400).send({ error: 'invalid buyer address' });
+      return { messages: db.getThread(req.params.id, req.params.buyer).map(serializeMsg) };
+    },
+  );
+
+  app.post<{
+    Params: { id: string; buyer: string };
+    Body: { sender?: string; kind?: string; body?: string; priceUsd1e8?: string };
+  }>('/listings/:id/thread/:buyer', async (req, reply) => {
+    if (!/^\d{1,78}$/.test(req.params.id)) return reply.code(400).send({ error: 'invalid listing id' });
+    if (!ADDR_RE.test(req.params.buyer)) return reply.code(400).send({ error: 'invalid buyer address' });
+    const b = req.body ?? {};
+    if (b.sender !== 'buyer' && b.sender !== 'seller') {
+      return reply.code(400).send({ error: 'sender must be "buyer" or "seller"' });
+    }
+    const kind = typeof b.kind === 'string' && MSG_KINDS.includes(b.kind) ? b.kind : 'text';
+    const body = typeof b.body === 'string' ? b.body.slice(0, MAX_MSG) : undefined;
+    const priceUsd1e8 =
+      typeof b.priceUsd1e8 === 'string' && /^\d{1,30}$/.test(b.priceUsd1e8) ? b.priceUsd1e8 : undefined;
+    if ((kind === 'offer' || kind === 'accept') && !priceUsd1e8) {
+      return reply.code(400).send({ error: 'offer/accept requires priceUsd1e8' });
+    }
+    if (kind === 'text' && !body) {
+      return reply.code(400).send({ error: 'text message requires a body' });
+    }
+    const row = db.addMessage({
+      listingId: req.params.id,
+      buyer: req.params.buyer,
+      sender: b.sender,
+      kind,
+      body,
+      priceUsd1e8,
+    });
+    return reply.code(201).send({ ok: true, message: serializeMsg(row) });
+  });
+
+  const serializeThread = (t: { listing_id: string; buyer: string; last_body: string | null; last_kind: string | null; last_at: number; title: string | null; image: string | null }) => ({
+    listingId: t.listing_id,
+    buyer: t.buyer,
+    lastBody: t.last_body,
+    lastKind: t.last_kind,
+    lastAt: t.last_at,
+    title: t.title,
+    image: t.image,
+  });
+
+  app.get<{ Params: { address: string } }>('/sellers/:address/threads', async (req, reply) => {
+    if (!ADDR_RE.test(req.params.address)) return reply.code(400).send({ error: 'invalid address' });
+    return { threads: db.getSellerThreads(req.params.address).map(serializeThread) };
+  });
+
+  app.get<{ Params: { address: string } }>('/buyers/:address/threads', async (req, reply) => {
+    if (!ADDR_RE.test(req.params.address)) return reply.code(400).send({ error: 'invalid address' });
+    return { threads: db.getBuyerThreads(req.params.address).map(serializeThread) };
   });
 
   // ---- Test-USDC faucet (testnet only; mints the demo pay token to a buyer) ----

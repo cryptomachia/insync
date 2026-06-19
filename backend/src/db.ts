@@ -70,6 +70,9 @@ export interface ListingMetaRow {
   title: string | null;
   description: string | null;
   image: string | null;
+  images: string | null; // JSON array of data-URLs
+  category: string | null;
+  condition: string | null;
   meet_address: string | null;
   meet_lat: number | null;
   meet_lng: number | null;
@@ -79,6 +82,27 @@ export interface ListingMetaRow {
   notes: string | null;
   seller_address: string | null;
   archived: number | null;
+}
+
+export interface MessageRow {
+  id: number;
+  listing_id: string;
+  buyer: string;
+  sender: 'buyer' | 'seller';
+  kind: string;
+  body: string | null;
+  price_usd_1e8: string | null;
+  created_at: number;
+}
+
+export interface ThreadSummaryRow {
+  listing_id: string;
+  buyer: string;
+  last_body: string | null;
+  last_kind: string | null;
+  last_at: number;
+  title: string | null;
+  image: string | null;
 }
 
 export interface CoordinationRow {
@@ -109,6 +133,10 @@ export interface MarketListingRow {
   title: string | null;
   image: string | null;
   meet_address: string | null;
+  category: string | null;
+  condition: string | null;
+  meet_lat: number | null;
+  meet_lng: number | null;
 }
 
 export interface HandoffDb {
@@ -154,6 +182,9 @@ export interface HandoffDb {
       title?: string;
       description?: string;
       image?: string;
+      images?: string[];
+      category?: string;
+      condition?: string;
       meetAddress?: string;
       meetLat?: number;
       meetLng?: number;
@@ -167,6 +198,18 @@ export interface HandoffDb {
   ): void;
   getListingMeta(listingId: bigint): ListingMetaRow | undefined;
   getSellerListings(sellerAddress: string): SellerListingRow[];
+  // Pre-deal messaging
+  addMessage(m: {
+    listingId: bigint | string;
+    buyer: string;
+    sender: 'buyer' | 'seller';
+    kind?: string;
+    body?: string;
+    priceUsd1e8?: bigint | string;
+  }): MessageRow;
+  getThread(listingId: bigint | string, buyer: string): MessageRow[];
+  getSellerThreads(seller: string): ThreadSummaryRow[];
+  getBuyerThreads(buyer: string): ThreadSummaryRow[];
   upsertCoordination(
     dealId: bigint,
     role: 'buyer' | 'seller',
@@ -239,6 +282,21 @@ CREATE TABLE IF NOT EXISTS listing_meta (
   updated_at   INTEGER NOT NULL
 );
 
+-- Pre-deal messaging + offers, keyed by (listing, buyer) — the buyer talks to the listing's
+-- seller before committing. kind: 'text' | 'offer' | 'accept' | 'decline'. price_usd_1e8 carries
+-- the offered/agreed price for offer/accept rows.
+CREATE TABLE IF NOT EXISTS messages (
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  listing_id    TEXT NOT NULL,
+  buyer         TEXT NOT NULL,
+  sender        TEXT NOT NULL,           -- 'buyer' | 'seller'
+  kind          TEXT NOT NULL DEFAULT 'text',
+  body          TEXT,
+  price_usd_1e8 TEXT,
+  created_at    INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_messages_thread ON messages(listing_id, buyer, id);
+
 -- Live meetup coordination per deal: each party (buyer/seller) shares a live location
 -- and/or a phone number once they've committed and are heading to the meet.
 CREATE TABLE IF NOT EXISTS deal_coordination (
@@ -274,6 +332,9 @@ export function openDb(path: string): HandoffDb {
     ['deal_coordination', 'email TEXT'],
     ['deal_coordination', 'note TEXT'],
     ['deal_coordination', 'listing_id TEXT'],
+    ['listing_meta', 'images TEXT'],     // JSON array of data-URLs (gallery); `image` stays the cover
+    ['listing_meta', 'category TEXT'],
+    ['listing_meta', 'condition TEXT'],
   ];
   for (const [table, col] of migrations) {
     try {
@@ -304,7 +365,7 @@ export function openDb(path: string): HandoffDb {
   // joined to their human details (title/photo/meet area). Newest first.
   const getActiveListingsStmt = raw.prepare(`
     SELECT l.listing_id, l.seller, l.price_usd_1e8, l.deposit_bps, l.pay_token,
-           m.title, m.image, m.meet_address
+           m.title, m.image, m.meet_address, m.category, m.condition, m.meet_lat, m.meet_lng
     FROM listings l
     LEFT JOIN listing_meta m ON m.listing_id = l.listing_id
     WHERE l.active = 1 AND COALESCE(m.archived, 0) = 0
@@ -353,12 +414,15 @@ export function openDb(path: string): HandoffDb {
   );
 
   const upsertMetaStmt = raw.prepare(`
-    INSERT INTO listing_meta (listing_id, title, description, image, meet_address, meet_lat, meet_lng, seller_phone, seller_email, meet_time, notes, seller_address, archived, updated_at)
-    VALUES (@listing_id, @title, @description, @image, @meet_address, @meet_lat, @meet_lng, @seller_phone, @seller_email, @meet_time, @notes, @seller_address, @archived, @updated_at)
+    INSERT INTO listing_meta (listing_id, title, description, image, images, category, condition, meet_address, meet_lat, meet_lng, seller_phone, seller_email, meet_time, notes, seller_address, archived, updated_at)
+    VALUES (@listing_id, @title, @description, @image, @images, @category, @condition, @meet_address, @meet_lat, @meet_lng, @seller_phone, @seller_email, @meet_time, @notes, @seller_address, @archived, @updated_at)
     ON CONFLICT(listing_id) DO UPDATE SET
       title=COALESCE(excluded.title, listing_meta.title),
       description=COALESCE(excluded.description, listing_meta.description),
       image=COALESCE(excluded.image, listing_meta.image),
+      images=COALESCE(excluded.images, listing_meta.images),
+      category=COALESCE(excluded.category, listing_meta.category),
+      condition=COALESCE(excluded.condition, listing_meta.condition),
       meet_address=COALESCE(excluded.meet_address, listing_meta.meet_address),
       meet_lat=COALESCE(excluded.meet_lat, listing_meta.meet_lat),
       meet_lng=COALESCE(excluded.meet_lng, listing_meta.meet_lng),
@@ -371,7 +435,7 @@ export function openDb(path: string): HandoffDb {
       updated_at=excluded.updated_at
   `);
   const getMetaStmt = raw.prepare(
-    `SELECT title, description, image, meet_address, meet_lat, meet_lng, seller_phone, seller_email, meet_time, notes, seller_address, archived FROM listing_meta WHERE listing_id=?`,
+    `SELECT title, description, image, images, category, condition, meet_address, meet_lat, meet_lng, seller_phone, seller_email, meet_time, notes, seller_address, archived FROM listing_meta WHERE listing_id=?`,
   );
   const getSellerListingsStmt = raw.prepare(
     `SELECT listing_id, title, image, meet_address, archived FROM listing_meta WHERE seller_address=? ORDER BY CAST(listing_id AS INTEGER) DESC`,
@@ -392,6 +456,40 @@ export function openDb(path: string): HandoffDb {
   const getCoordStmt = raw.prepare(
     `SELECT role, lat, lng, phone, email, note, listing_id, updated_at FROM deal_coordination WHERE deal_id=?`,
   );
+
+  const addMessageStmt = raw.prepare(`
+    INSERT INTO messages (listing_id, buyer, sender, kind, body, price_usd_1e8, created_at)
+    VALUES (@listing_id, @buyer, @sender, @kind, @body, @price_usd_1e8, @created_at)
+  `);
+  const getMessageByIdStmt = raw.prepare(`SELECT * FROM messages WHERE id=?`);
+  const getThreadStmt = raw.prepare(
+    `SELECT * FROM messages WHERE listing_id=? AND buyer=? ORDER BY id ASC`,
+  );
+  // Threads for a seller (across all their listings): one row per (listing,buyer) with the last msg.
+  const getSellerThreadsStmt = raw.prepare(`
+    SELECT t.listing_id, t.buyer, t.last_at, mm.body AS last_body, mm.kind AS last_kind,
+           lm.title, lm.image
+    FROM (
+      SELECT listing_id, buyer, MAX(id) AS last_id, MAX(created_at) AS last_at
+      FROM messages GROUP BY listing_id, buyer
+    ) t
+    JOIN messages mm ON mm.id = t.last_id
+    JOIN listings l ON l.listing_id = t.listing_id
+    LEFT JOIN listing_meta lm ON lm.listing_id = t.listing_id
+    WHERE l.seller = ?
+    ORDER BY t.last_at DESC
+  `);
+  const getBuyerThreadsStmt = raw.prepare(`
+    SELECT t.listing_id, t.buyer, t.last_at, mm.body AS last_body, mm.kind AS last_kind,
+           lm.title, lm.image
+    FROM (
+      SELECT listing_id, buyer, MAX(id) AS last_id, MAX(created_at) AS last_at
+      FROM messages WHERE buyer=? GROUP BY listing_id, buyer
+    ) t
+    JOIN messages mm ON mm.id = t.last_id
+    LEFT JOIN listing_meta lm ON lm.listing_id = t.listing_id
+    ORDER BY t.last_at DESC
+  `);
 
   const getCursorStmt = raw.prepare(`SELECT last_block FROM indexer_state WHERE id=1`);
   const setCursorStmt = raw.prepare(`
@@ -519,7 +617,10 @@ export function openDb(path: string): HandoffDb {
         listing_id: listingId.toString(),
         title: meta.title ?? null,
         description: meta.description ?? null,
-        image: meta.image ?? null,
+        image: meta.image ?? (meta.images && meta.images.length ? meta.images[0] : null),
+        images: meta.images ? JSON.stringify(meta.images) : null,
+        category: meta.category ?? null,
+        condition: meta.condition ?? null,
         meet_address: meta.meetAddress ?? null,
         meet_lat: meta.meetLat ?? null,
         meet_lng: meta.meetLng ?? null,
@@ -557,6 +658,31 @@ export function openDb(path: string): HandoffDb {
 
     getCoordination(dealId) {
       return getCoordStmt.all(dealId.toString()) as CoordinationRow[];
+    },
+
+    addMessage(m) {
+      const info = addMessageStmt.run({
+        listing_id: m.listingId.toString(),
+        buyer: lc(m.buyer),
+        sender: m.sender,
+        kind: m.kind ?? 'text',
+        body: m.body ?? null,
+        price_usd_1e8: m.priceUsd1e8 != null ? m.priceUsd1e8.toString() : null,
+        created_at: now(),
+      });
+      return getMessageByIdStmt.get(info.lastInsertRowid as number) as MessageRow;
+    },
+
+    getThread(listingId, buyer) {
+      return getThreadStmt.all(listingId.toString(), lc(buyer)) as MessageRow[];
+    },
+
+    getSellerThreads(seller) {
+      return getSellerThreadsStmt.all(lc(seller)) as ThreadSummaryRow[];
+    },
+
+    getBuyerThreads(buyer) {
+      return getBuyerThreadsStmt.all(lc(buyer)) as ThreadSummaryRow[];
     },
 
     getCursor() {

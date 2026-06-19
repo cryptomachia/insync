@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { useAuth, useWalletClient } from '@handoff/auth';
 import { getAddresses } from '@handoff/contracts-abi';
 import { listItem } from '@/lib/tx';
-import { saveListingMeta } from '@/lib/backend';
+import { saveListingMeta, CATEGORIES, CONDITIONS } from '@/lib/backend';
 import { parseUsdToUsd1e8, fmtUsd1e8, depositUsd1e8, totalUsd1e8, usd1e8ToUsdc } from '@/lib/format';
 import { ErrorNote, SuccessNote, InfoNote, errMsg } from '@/components/Notice';
 import ShareListing from '@/components/ShareListing';
@@ -71,7 +71,9 @@ export default function SellPage() {
 
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
-  const [image, setImage] = useState<string | null>(null);
+  const [images, setImages] = useState<string[]>([]);
+  const [category, setCategory] = useState('');
+  const [condition, setCondition] = useState('');
   const [priceStr, setPriceStr] = useState('');
   const [depositBps, setDepositBps] = useState(1000);
   const [freeCancelWindow, setFreeCancelWindow] = useState(60 * 60); // 1h
@@ -100,14 +102,16 @@ export default function SellPage() {
   const buyerPays = totalUsd1e8(priceUsd1e8, depositBps);
   const sellerBond = depositUsd1e8(priceUsd1e8, sellerBondBps);
 
-  async function handleFile(file: File | undefined) {
-    if (!file) return;
-    if (!file.type.startsWith('image/')) {
+  async function handleFiles(files: FileList | File[] | null | undefined) {
+    if (!files) return;
+    const list = Array.from(files).filter((f) => f.type.startsWith('image/'));
+    if (list.length === 0) {
       setError('That file isn’t an image. Drop a photo (JPG/PNG).');
       return;
     }
     try {
-      setImage(await compressImage(file));
+      const compressed = await Promise.all(list.slice(0, 8).map((f) => compressImage(f)));
+      setImages((cur) => [...cur, ...compressed].slice(0, 8)); // up to 8 photos; first is the cover
       setError(null);
     } catch {
       setError('Could not read that image. Try a different photo.');
@@ -115,13 +119,14 @@ export default function SellPage() {
   }
 
   function onPickImage(e: React.ChangeEvent<HTMLInputElement>) {
-    void handleFile(e.target.files?.[0]);
+    void handleFiles(e.target.files);
+    e.target.value = ''; // allow re-picking the same file
   }
 
   function onDrop(e: React.DragEvent) {
     e.preventDefault();
     setDragging(false);
-    void handleFile(e.dataTransfer.files?.[0]);
+    void handleFiles(e.dataTransfer.files);
   }
 
   function useMyLocation() {
@@ -165,7 +170,9 @@ export default function SellPage() {
         await saveListingMeta(id, {
           title: name.trim(),
           description: description.trim() || undefined,
-          image: image || undefined,
+          images: images.length ? images : undefined,
+          category: category || undefined,
+          condition: condition || undefined,
           meetAddress: meetAddress.trim() || undefined,
           meetLat: meetCoords?.lat,
           meetLng: meetCoords?.lng,
@@ -234,8 +241,9 @@ export default function SellPage() {
           onClick={() => {
             setName('');
             setDescription('');
-            setImage('' as unknown as null);
-            setImage(null);
+            setImages([]);
+            setCategory('');
+            setCondition('');
             setPriceStr('');
             setListingId(null);
           }}
@@ -260,19 +268,37 @@ export default function SellPage() {
           onDragLeave={() => setDragging(false)}
           onDrop={onDrop}
         >
-          <span className="label">Photo</span>
-          <input ref={fileRef} type="file" accept="image/*" hidden onChange={onPickImage} />
-          {image ? (
+          <span className="label">Photos <span className="text-zinc-500">(up to 8 — first is the cover)</span></span>
+          <input ref={fileRef} type="file" accept="image/*" multiple hidden onChange={onPickImage} />
+          {images.length > 0 ? (
             <div className="space-y-2">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={image} alt="item" className="aspect-video w-full rounded-xl object-cover" />
-              <div className="flex gap-2">
-                <button className="btn-secondary" onClick={() => fileRef.current?.click()}>
-                  Change photo
-                </button>
-                <button className="btn-secondary" onClick={() => setImage(null)}>
-                  Remove
-                </button>
+              <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
+                {images.map((src, i) => (
+                  <div key={i} className="relative aspect-square overflow-hidden rounded-xl border border-white/10">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={src} alt={`photo ${i + 1}`} className="h-full w-full object-cover" />
+                    {i === 0 && (
+                      <span className="absolute left-1 top-1 rounded bg-black/60 px-1 text-[9px] font-semibold text-white">Cover</span>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => setImages((cur) => cur.filter((_, j) => j !== i))}
+                      className="absolute right-1 top-1 flex h-5 w-5 items-center justify-center rounded-full bg-black/70 text-xs text-white hover:bg-rose-500"
+                      aria-label="remove photo"
+                    >
+                      ×
+                    </button>
+                  </div>
+                ))}
+                {images.length < 8 && (
+                  <button
+                    type="button"
+                    onClick={() => fileRef.current?.click()}
+                    className="flex aspect-square items-center justify-center rounded-xl border border-dashed border-white/15 text-2xl text-zinc-400 hover:bg-white/5"
+                  >
+                    +
+                  </button>
+                )}
               </div>
             </div>
           ) : (
@@ -312,6 +338,28 @@ export default function SellPage() {
             onChange={(e) => setDescription(e.target.value)}
             placeholder="Condition, size, anything the buyer should know…"
           />
+        </div>
+
+        {/* Category + condition */}
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="label" htmlFor="category">Category</label>
+            <select id="category" className="input" value={category} onChange={(e) => setCategory(e.target.value)}>
+              <option value="">Choose…</option>
+              {CATEGORIES.map((c) => (
+                <option key={c} value={c}>{c}</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="label" htmlFor="condition">Condition</label>
+            <select id="condition" className="input" value={condition} onChange={(e) => setCondition(e.target.value)}>
+              <option value="">Choose…</option>
+              {CONDITIONS.map((c) => (
+                <option key={c} value={c}>{c}</option>
+              ))}
+            </select>
+          </div>
         </div>
 
         {/* Price */}

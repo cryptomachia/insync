@@ -17,6 +17,7 @@ import {
 } from '@/lib/format';
 import { policyText } from '@/lib/cancellation';
 import { VaultLock } from '@/components/designs';
+import Chat from '@/components/Chat';
 import { ErrorNote, InfoNote, SuccessNote, errMsg } from '@/components/Notice';
 
 const VOLATILE_BUFFER_BPS = 2000; // +20% buffer for volatile tokens
@@ -50,6 +51,7 @@ export default function BuyListingPage({ params }: { params: { listingId: string
   const [tokenAmount, setTokenAmount] = useState<bigint | null>(null);
   const [fundErr, setFundErr] = useState<string | null>(null);
   const [dealId, setDealId] = useState<bigint | null>(null);
+  const [imgIdx, setImgIdx] = useState(0);
 
   useEffect(() => {
     if (id === null) return setLoadErr('Invalid listing link.');
@@ -97,6 +99,8 @@ export default function BuyListingPage({ params }: { params: { listingId: string
   const total = totalUsd1e8(listing.priceUsd1e8, listing.depositBps);
   const stable = isStableToken(listing.payToken);
   const title = meta?.title || `Listing #${listingId}`;
+  const gallery = meta?.images && meta.images.length ? meta.images : meta?.image ? [meta.image] : [];
+  const isSeller = !!address && address.toLowerCase() === listing.seller.toLowerCase();
 
   // Funded — "safe to meet" confirmation the seller can verify.
   if (dealId !== null) {
@@ -121,10 +125,7 @@ export default function BuyListingPage({ params }: { params: { listingId: string
     <div className="grid gap-8 lg:grid-cols-[1.4fr_1fr]">
       {/* Left: the item */}
       <div className="space-y-5">
-        {meta?.image && (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img src={meta.image} alt={title} className="aspect-video w-full rounded-2xl border border-white/10 object-cover" />
-        )}
+        <Gallery images={gallery} alt={title} idx={imgIdx} setIdx={setImgIdx} />
 
         <div className="space-y-1">
           <h1 className="text-3xl font-bold leading-tight">{title}</h1>
@@ -132,7 +133,11 @@ export default function BuyListingPage({ params }: { params: { listingId: string
             <span className="text-3xl font-bold text-indigo-300">{fmtUsd1e8(listing.priceUsd1e8)}</span>
             <span className="pill bg-white/10 text-zinc-300">{stable ? 'USDC' : 'volatile token'}</span>
           </div>
-          <div className="text-sm text-zinc-500">Sold by {shortAddr(listing.seller)}</div>
+          <div className="flex flex-wrap items-center gap-2 text-sm text-zinc-500">
+            <span>Sold by {shortAddr(listing.seller)}</span>
+            {meta?.category && <span className="pill bg-white/10 text-zinc-300">{meta.category}</span>}
+            {meta?.condition && <span className="pill bg-white/10 text-zinc-300">{meta.condition}</span>}
+          </div>
         </div>
 
         {meta?.description && (
@@ -181,6 +186,21 @@ export default function BuyListingPage({ params }: { params: { listingId: string
             <p className="text-xs text-zinc-500">
               You&apos;ll get the seller&apos;s live location + full contact after you lock payment.
             </p>
+          </div>
+        )}
+
+        {/* Pre-deal messaging + offers */}
+        {isSeller ? (
+          <div className="card text-sm text-zinc-400">
+            This is your listing. Buyer messages &amp; offers show up in your{' '}
+            <Link href="/messages" className="text-indigo-300 underline">Inbox</Link>.
+          </div>
+        ) : isConnected && address ? (
+          <Chat listingId={listingId} buyer={address} role="buyer" listingPriceUsd1e8={listing.priceUsd1e8} />
+        ) : (
+          <div className="card flex items-center justify-between gap-3 text-sm text-zinc-400">
+            <span>Sign in to message the seller or make an offer.</span>
+            <button className="btn-primary !w-auto px-4" onClick={login}>Sign in</button>
           </div>
         )}
       </div>
@@ -257,6 +277,64 @@ export default function BuyListingPage({ params }: { params: { listingId: string
           </VaultLock>
         )}
       </div>
+    </div>
+  );
+}
+
+function Gallery({
+  images,
+  alt,
+  idx,
+  setIdx,
+}: {
+  images: string[];
+  alt: string;
+  idx: number;
+  setIdx: (n: number) => void;
+}) {
+  if (images.length === 0) return null;
+  const i = Math.min(idx, images.length - 1);
+  return (
+    <div className="space-y-2">
+      <div className="relative">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src={images[i]} alt={alt} className="aspect-video w-full rounded-2xl border border-white/10 object-cover" />
+        {images.length > 1 && (
+          <>
+            <button
+              onClick={() => setIdx((i - 1 + images.length) % images.length)}
+              className="absolute left-2 top-1/2 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full bg-black/50 text-lg text-white hover:bg-black/70"
+              aria-label="previous photo"
+            >
+              ‹
+            </button>
+            <button
+              onClick={() => setIdx((i + 1) % images.length)}
+              className="absolute right-2 top-1/2 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full bg-black/50 text-lg text-white hover:bg-black/70"
+              aria-label="next photo"
+            >
+              ›
+            </button>
+            <span className="absolute bottom-2 right-2 rounded bg-black/60 px-2 py-0.5 text-[11px] text-white">
+              {i + 1}/{images.length}
+            </span>
+          </>
+        )}
+      </div>
+      {images.length > 1 && (
+        <div className="flex gap-2 overflow-x-auto pb-1">
+          {images.map((src, j) => (
+            <button
+              key={j}
+              onClick={() => setIdx(j)}
+              className={`h-14 w-14 shrink-0 overflow-hidden rounded-lg border ${j === i ? 'border-indigo-400' : 'border-white/10'}`}
+            >
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={src} alt="" className="h-full w-full object-cover" />
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

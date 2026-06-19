@@ -8,6 +8,7 @@ import AccountMenu from '@/components/AccountMenu';
 const LINKS = [
   { href: '/buy', label: 'Browse' },
   { href: '/sell', label: 'Sell' },
+  { href: '/messages', label: 'Messages' },
   { href: '/my-listings', label: 'My listings' },
   { href: '/trade-history', label: 'History' },
 ];

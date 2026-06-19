@@ -23,6 +23,9 @@ export type ListingMeta = {
   title?: string;
   description?: string;
   image?: string;
+  images?: string[];
+  category?: string | null;
+  condition?: string | null;
   meetAddress?: string | null;
   meetLat?: number | null;
   meetLng?: number | null;
@@ -66,7 +69,77 @@ export type MarketListing = {
   title: string | null;
   image: string | null;
   meetAddress: string | null;
+  category: string | null;
+  condition: string | null;
+  meetLat: number | null;
+  meetLng: number | null;
 };
+
+export const CATEGORIES = ['Electronics','Furniture','Vehicles','Clothing','Sports','Home','Toys','Tickets','Other'] as const;
+export const CONDITIONS = ['New','Like New','Good','Fair'] as const;
+
+export type ChatMessage = {
+  id: number;
+  sender: 'buyer' | 'seller';
+  kind: 'text' | 'offer' | 'accept' | 'decline';
+  body: string | null;
+  priceUsd1e8: string | null;
+  createdAt: number;
+};
+
+export type ThreadSummary = {
+  listingId: string;
+  buyer: string;
+  lastBody: string | null;
+  lastKind: string | null;
+  lastAt: number;
+  title: string | null;
+  image: string | null;
+};
+
+/** Messages in a (listing, buyer) conversation. */
+export async function getThread(listingId: bigint | string, buyer: string): Promise<ChatMessage[]> {
+  try {
+    const res = await fetch(`${BACKEND_URL}/listings/${listingId}/thread/${buyer}`, { cache: 'no-store' });
+    if (!res.ok) return [];
+    return ((await res.json())?.messages ?? []) as ChatMessage[];
+  } catch {
+    return [];
+  }
+}
+
+/** Append a message/offer to a (listing, buyer) thread. */
+export async function sendMessage(
+  listingId: bigint | string,
+  buyer: string,
+  msg: { sender: 'buyer' | 'seller'; kind?: ChatMessage['kind']; body?: string; priceUsd1e8?: string },
+): Promise<void> {
+  await fetch(`${BACKEND_URL}/listings/${listingId}/thread/${buyer}`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(msg),
+  });
+}
+
+export async function getSellerThreads(address: string): Promise<ThreadSummary[]> {
+  try {
+    const res = await fetch(`${BACKEND_URL}/sellers/${address}/threads`, { cache: 'no-store' });
+    if (!res.ok) return [];
+    return ((await res.json())?.threads ?? []) as ThreadSummary[];
+  } catch {
+    return [];
+  }
+}
+
+export async function getBuyerThreads(address: string): Promise<ThreadSummary[]> {
+  try {
+    const res = await fetch(`${BACKEND_URL}/buyers/${address}/threads`, { cache: 'no-store' });
+    if (!res.ok) return [];
+    return ((await res.json())?.threads ?? []) as ThreadSummary[];
+  } catch {
+    return [];
+  }
+}
 
 /** Purchasable listings for the browse grid (active + not withdrawn, with details). */
 export async function getActiveListings(): Promise<MarketListing[]> {
