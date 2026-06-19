@@ -8,6 +8,13 @@ keys into `.env` (see [`e2e/CHECKLIST.md`](./e2e/CHECKLIST.md)).
 > locked before anyone travels* (kills flaking), and at the meet funds settle
 > *instantly and finally — no bank, no chargeback*. Impossible without crypto.
 
+> **Since this script was written, the app also has:** a **seller no-show bond**
+> (the seller stakes too, forfeited to the buyer if the seller ghosts — flaking is
+> now penalised on *both* sides), **pre-deal chat + offers** (buyers message and
+> "Make offer"; sellers Accept/Decline from a `/messages` inbox), **browse by
+> category / condition / price / distance**, and **multi-photo galleries**. The
+> three paths below still demo the escrow core; mention the bond when you list.
+
 ---
 
 ## 0. Pre-flight (do this once, before the audience)
