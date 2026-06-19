@@ -57,7 +57,7 @@ on-chain rule or a mutual in-person signature — never a judge, jury, or AI.
 ```
 
 - **`contracts/`** — `Escrow.sol` (the state machine) + `Reputation.sol`
-  (on-chain outcome tally, written only by the escrow). 68 Foundry tests.
+  (on-chain outcome tally, written only by the escrow). 84 Foundry tests.
 - **`packages/*`** — independent `@handoff/*` npm workspaces consumed by the web
   app: `auth` (Dynamic), `funding` (Blink), `qr` (handshake), `datastreams`
   (Chainlink), `contracts-abi` (the frozen ABI + address helpers).
@@ -68,25 +68,42 @@ on-chain rule or a mutual in-person signature — never a judge, jury, or AI.
 See **[SPEC.md](./SPEC.md)** for the full design (frozen interfaces, event
 signatures, and the per-module contract).
 
-## The commitment-deposit (cancellation) model
+## The commitment model — symmetric, two-sided
 
-The buyer's **item price is always safe**. The only money ever at risk is a
-small, seller-set **deposit** (earnest money, `depositBps` per listing), and only
-when the buyer flakes *after the seller has already shown up*. At funding the
-buyer locks `price + deposit`; the outcome is a deterministic rule:
+The buyer's **item price is always safe**. Flaking is penalised on **both** sides:
+- the **buyer deposit** (`depositBps`, set by the seller) — forfeited to the seller only
+  when the buyer flakes *after the seller showed up*;
+- the **seller bond** (`bondAmount`, staked by the seller at `list` time) — forfeited to the
+  buyer only when the **seller no-shows** (the deal ends past the free window / at expiry with
+  no check-in). This is the mirror of the deposit, so ghosting costs the ghoster on either side.
 
-| Trigger | Item price | Deposit |
-|---|---|---|
-| `confirmReceipt` — buyer got the item (success) | → seller | → back to buyer |
-| `agreeCancel` — seller co-signs a cancel | → buyer | → buyer |
-| `buyerCancel` **before** the free-cancel window | → buyer | → buyer |
-| `buyerCancel` after free window **and** seller checked in | → buyer | **→ seller** (buyer flaked on a present seller) |
-| `buyerCancel` after free window, seller **not** checked in | → buyer | → buyer (seller no-show protection) |
-| `reclaimExpired` after expiry, seller checked in | → buyer | → seller |
-| `reclaimExpired` after expiry, seller not checked in | → buyer | → buyer |
+The cancellation **timing policy** (`freeCancelWindow`, `dealTtl`) is set by the **seller** on
+the listing, so the buyer can't widen their own free-refund window to dodge the deposit. Every
+outcome is a deterministic on-chain rule:
 
-For a volatile pay-token, "price" and "deposit" are valued in USD via Chainlink
-Data Streams at the moment of the call, with surplus returned to the buyer.
+| Trigger | Item price | Buyer deposit | Seller bond |
+|---|---|---|---|
+| `confirmReceipt` — success | → seller | → buyer | → seller |
+| `agreeCancel` — seller co-signs | → buyer | → buyer | → seller |
+| `buyerCancel` **before** free window | → buyer | → buyer | → seller |
+| `buyerCancel` after free window, seller checked in | → buyer | **→ seller** | → seller |
+| `buyerCancel` after free window, seller **not** checked in | → buyer | → buyer | **→ buyer** |
+| `reclaimExpired` after expiry, seller checked in | → buyer | → seller | → seller |
+| `reclaimExpired` after expiry, seller **not** checked in | → buyer | → buyer | **→ buyer** |
+
+Listings are **single-use** (funding consumes one); `cancelListing()` lets the seller withdraw an
+unfunded listing on-chain and reclaim the bond. For a volatile pay-token, "price"/"deposit" are
+valued in USD via Chainlink Data Streams at the moment of the call, surplus back to the buyer.
+
+## Marketplace features (off-chain, via `backend/`)
+
+Beyond the escrow core, the app has the discovery + communication layer a real marketplace needs:
+- **Pre-deal chat + offers** — buyers message the seller per listing and "Make offer"; the seller
+  Accepts/Declines. Sellers get an **Inbox** (`/messages`).
+- **Categories, filters & distance** — browse by category, condition, price range, and "within X
+  miles" (buyer geolocation + the listing's saved coordinates), sorted by newest / nearest / price.
+- **Photo galleries** — up to 8 photos per listing (swipeable on the buy page).
+- **Live meetup coordination** — once funded, both parties share live location + contact.
 
 ## Live deployment (Base Sepolia · chainId 84532)
 
@@ -130,8 +147,9 @@ Single source link per sponsor (the primary integration point):
 
 ## Test status
 
-- **76 contract tests** (Foundry): happy path, every §4 cancellation branch,
-  volatile-token release through a mock verifier, reentrancy, access control.
+- **84 contract tests** (Foundry): happy path, every §4 cancellation branch,
+  the seller-bond routing + `cancelListing`, volatile-token release through a mock
+  verifier, reentrancy, access control.
 - **Script-level on-chain e2e** (`e2e/scripts/contract-e2e.ts`, viem): every §4
   outcome plus the volatile Data Streams release, run directly against the chain.
 - **Full UI e2e** (Playwright): the happy path (login → list → fund → check-in →
@@ -231,10 +249,11 @@ click-by-click steps is in **[DEMO.md](./DEMO.md)**. The integration order is in
   on-chain approve + `fund`.
 - **Test USDC.** The Base Sepolia USDC above is a test token for the demo, not
   Circle's canonical testnet USDC.
-- **Withdraw/relist is off-chain.** A seller withdrawing a listing flips an
-  off-chain flag (hidden from browse + a warning on the buy page); the escrow has
-  no seller `cancelListing`, so a true on-chain delist is a small contract
-  addition + redeploy.
+- **Negotiated-price offers don't auto-relist.** Chat offers + Accept/Decline work, but because
+  the on-chain listing price is fixed, accepting a *lower* price currently prompts the seller to
+  relist at it (via on-chain `cancelListing` + a fresh `list`) rather than auto-relisting. The
+  reputation contract is also deployed-but-unwired (`reputation=address(0)`), so no on-chain
+  trust score yet — both are small follow-ups.
 
 > Everything builds and the full e2e runs offline with `MOCK=true`. Live sponsor
 > infrastructure activates by dropping real keys into `.env`.

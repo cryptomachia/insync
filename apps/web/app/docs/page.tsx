@@ -97,11 +97,21 @@ export default function DocsPage() {
         </ul>
       </Section>
 
-      <Section title="Browsing, managing, and receipts">
+      <Section title="Browsing, messaging, and receipts">
         <ul className="space-y-2">
           <Bullet>
-            Buyers can <b className="text-zinc-200">browse and search</b> all live items, or open a direct link/QR
-            the seller shares in person.
+            Buyers <b className="text-zinc-200">browse by category</b>, filter by condition, price, and{' '}
+            <b className="text-zinc-200">distance</b> ("within X miles" using your location), and sort by
+            newest / nearest / price — or open a direct link/QR the seller shares in person.
+          </Bullet>
+          <Bullet>
+            Listings carry a <b className="text-zinc-200">photo gallery</b> (up to 8 photos), a category,
+            and a condition.
+          </Bullet>
+          <Bullet>
+            Before committing, buyers can <b className="text-zinc-200">message the seller</b> and{' '}
+            <b className="text-zinc-200">make an offer</b>; the seller accepts or declines. Conversations
+            live in your <b className="text-zinc-200">Messages</b> inbox.
           </Bullet>
           <Bullet>
             Sellers manage everything under <b className="text-zinc-200">My listings</b> — edit details, withdraw,
@@ -118,22 +128,26 @@ export default function DocsPage() {
         </ul>
       </Section>
 
-      <Section title="The refundable deposit (no-show protection)">
+      <Section title="No-show protection (penalised on both sides)">
         <p>
-          On top of the price, the buyer puts down a small <b className="text-zinc-200">refundable
-          deposit</b> (the seller chooses 0%, 10%, or 20%). It keeps both sides honest:
+          Flaking costs the flaker on <b className="text-zinc-200">either</b> side. The buyer puts
+          down a small <b className="text-zinc-200">refundable deposit</b>, and the seller stakes a{' '}
+          <b className="text-zinc-200">no-show bond</b> when listing — mirrors of each other:
         </p>
         <ul className="mt-3 space-y-2">
-          <Bullet>The buyer gets the deposit back the moment the deal completes.</Bullet>
           <Bullet>
             The item price is <b className="text-zinc-200">always</b> refundable to the buyer until
             they confirm — they can change their mind and walk away with their money.
           </Bullet>
+          <Bullet>Both the deposit and the bond come back when the deal completes.</Bullet>
           <Bullet>
-            The buyer only loses the deposit if they back out <i>after</i> the seller has already
-            shown up to meet — so sellers aren&apos;t left stranded by a flake.
+            The buyer loses the <b className="text-zinc-200">deposit</b> only if they back out{' '}
+            <i>after</i> the seller showed up to meet.
           </Bullet>
-          <Bullet>If the seller never shows, the buyer gets everything back.</Bullet>
+          <Bullet>
+            The seller loses the <b className="text-zinc-200">bond</b> (it goes to the buyer) if{' '}
+            <i>they</i> never show — so a no-show seller can&apos;t waste your trip for free.
+          </Bullet>
         </ul>
       </Section>
 
