@@ -37,14 +37,14 @@ handoff/
   SPEC.md  README.md  .gitignore  .env.example  package.json   (foundation — do not rewrite)
   packages/contracts-abi/   (foundation stub; contracts build overwrites with real ABI)
   contracts/                Escrow.sol + Reputation.sol + tests + deploy
-  packages/datastreams/     the module
-  packages/auth/            the module  (Dynamic)
-  packages/funding/         the module  (Blink)
-  packages/qr/              the module  (QR handshake)
-  apps/web/                 the module  (Next.js app; imports the packages above)
-  backend/                  the module  (notification API + event indexer)
-  cre/                      the module  (Chainlink CRE workflow)
-  e2e/  scripts/  Makefile  DEMO.md  (integration, e2e, devx, docs)
+  packages/datastreams/     Chainlink Data Streams price helper + report fetch
+  packages/auth/            Dynamic embedded wallets (email login)
+  packages/funding/         Blink one-tap USDC funding
+  packages/qr/              QR handshake (in-person release)
+  apps/web/                 Next.js app; imports the packages above
+  backend/                  notification API + event indexer
+  cre/                      Chainlink CRE workflow
+  e2e/  scripts/  Makefile  DEMO.md   integration, e2e, devx, docs
 ```
 
 Module boundaries (keep the codebase conflict-free):
